@@ -58,13 +58,15 @@ end
 local function Gray(s) return "|cff808080" .. s .. "|r" end
 
 -- item is an itemID or an item string ("item:1234:..."). Uncached items show a
--- placeholder; GET_ITEM_INFO_RECEIVED refreshes the view once the server answers.
+-- grey placeholder link (still hoverable); GET_ITEM_INFO_RECEIVED refreshes the
+-- view with the real, quality-coloured link once the server answers.
 local function ItemText(item)
-    local id = tonumber(item) or tonumber(tostring(item):match("item:(%d+)"))
+    local itemString = tonumber(item) and ("item:" .. item) or tostring(item)
+    local id = tonumber(itemString:match("item:(%d+)"))
     local _, link = GetItemInfo(item)
     local icon = id and GetItemIcon(id)
     local iconText = icon and ("|T" .. icon .. ":16|t ") or ""
-    return iconText .. (link or Gray("[item " .. tostring(id) .. "]"))
+    return iconText .. (link or ("|cff808080|H" .. itemString .. "|h[item " .. tostring(id) .. "]|h|r"))
 end
 
 -- Recipe IDs are spell IDs, so names and icons are available instantly.
@@ -78,11 +80,12 @@ local function SpellIcon(id)
     return GetSpellTexture and GetSpellTexture(id)
 end
 
--- Shows the crafted item (quality-coloured) when known, else the recipe's spell.
+-- Shows the crafted item (quality-coloured) when known, else a link to the recipe's spell.
 local function RecipeText(recipeID, itemID)
     if itemID and itemID > 0 then return ItemText(itemID) end
     local icon = SpellIcon(recipeID)
-    return (icon and ("|T" .. icon .. ":16|t ") or "") .. (SpellName(recipeID) or ("recipe " .. recipeID))
+    local link = C_Spell and C_Spell.GetSpellLink and C_Spell.GetSpellLink(recipeID)
+    return (icon and ("|T" .. icon .. ":16|t ") or "") .. (link or SpellName(recipeID) or ("recipe " .. recipeID))
 end
 
 -- Item list for bags/bank snapshots, best quality first.
@@ -462,30 +465,39 @@ local function BuildSettings()
         return Check(text, function() return share()[key] end, function(v) share()[key] = v end)
     end
 
-    -- One row of radio-style checkboxes: "Bags:  [ ] All  [x] Materials  [ ] None"
-    local MODES = { { "all", "All" }, { "materials", "Materials" }, { "none", "None" } }
-    local function ModeRow(text, key)
-        local fs = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        fs:SetPoint("TOPLEFT", x + 8, y - 5)
-        fs:SetText(text)
-        local left = x + 56
-        for _, m in ipairs(MODES) do
-            local mode = m[1]
-            local _, label = MakeCheck(left, y, m[2], "GameFontHighlightSmall",
-                function() return share()[key] == mode end,
-                function() share()[key] = mode end)
+    -- One row of radio-style checkboxes: "Bags:  [ ] All  [x] Materials  [ ] None".
+    -- options = { { value, label }, ... }; get() returns the current value.
+    local function RadioRow(text, options, get, set, after)
+        local left = x + 8
+        if text then
+            local fs = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            fs:SetPoint("TOPLEFT", left, y - 5)
+            fs:SetText(text)
+            left = x + 56
+        end
+        for _, o in ipairs(options) do
+            local value = o[1]
+            local _, label = MakeCheck(left, y, o[2], "GameFontHighlightSmall",
+                function() return get() == value end,
+                function() set(value) end, after)
             left = left + 26 + label:GetStringWidth() + 12
         end
         y = y - 26
+    end
+
+    local MODES = { { "all", "All" }, { "materials", "Materials" }, { "none", "None" } }
+    local function ModeRow(text, key)
+        RadioRow(text, MODES, function() return share()[key] end, function(v) share()[key] = v end)
     end
 
     local function OnScreenToggle(text, get, set)
         return Check(text, get, set, nil, function() ns.RefreshOnScreen() end)
     end
 
-    local function AutoSync(text, minutes)
-        return Check(text, function() return ns.db.settings.autoSync == minutes end,
-            function() ns.db.settings.autoSync = minutes end, 24, function() end)
+    local function TooltipToggle(text, key)
+        return Check(text, function() return ns.db.settings.tooltip[key] end,
+            function(v) ns.db.settings.tooltip[key] = v end, nil,
+            function() ns.InvalidateTooltipIndex() end)
     end
 
     -- Left column: what friends receive
@@ -535,10 +547,14 @@ local function BuildSettings()
         "GameFontDisableSmall", nil, 250)
     y = y - 6
     Label("Auto sync", "GameFontNormalLarge")
-    AutoSync("Off", 0)
-    AutoSync("Every 5 minutes", 5)
-    AutoSync("Every 10 minutes", 10)
-    AutoSync("Every 30 minutes", 30)
+    RadioRow(nil, { { 0, "Off" }, { 5, "5 min" }, { 10, "10 min" }, { 30, "30 min" } },
+        function() return ns.db.settings.autoSync end,
+        function(v) ns.db.settings.autoSync = v end,
+        function() end)
+    y = y - 6
+    Label("Item tooltips", "GameFontNormalLarge")
+    TooltipToggle("Show who has / can craft items", "enabled")
+    TooltipToggle("Include my other characters", "mine")
     y = y - 6
     Label("Notifications", "GameFontNormalLarge")
     Check("Show friends' activity in chat",
@@ -616,6 +632,18 @@ local function Build()
     body = CreateFrame("Frame", nil, bodyScroll)
     body:SetSize(bodyW, 1)
     bodyScroll:SetScrollChild(body)
+    -- Item and spell links in the text: hover for a tooltip; click behaves like
+    -- a chat link (shift-click to link in chat, ctrl-click to try on).
+    body:SetHyperlinksEnabled(true)
+    body:SetScript("OnHyperlinkEnter", function(self, link)
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT", 12, 0)
+        GameTooltip:SetHyperlink(link)
+        GameTooltip:Show()
+    end)
+    body:SetScript("OnHyperlinkLeave", GameTooltip_Hide)
+    body:SetScript("OnHyperlinkClick", function(_, link, text, button)
+        SetItemRef(link, text, button)
+    end)
     bodyText = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     bodyText:SetPoint("TOPLEFT", 4, -4)
     bodyText:SetWidth(bodyW - 10)

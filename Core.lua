@@ -35,6 +35,10 @@ local DEFAULTS = {
             enabled = false,
             pos = nil,
         },
+        tooltip = {
+            enabled = true, -- add "who has / can craft" lines to item tooltips
+            mine = true,    -- include this account's other characters
+        },
     },
 }
 

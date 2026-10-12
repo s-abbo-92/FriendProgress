@@ -16,3 +16,4 @@ Groups.lua
 UI.lua
 PartyXP.lua
 SyncButton.lua
+Tooltip.lua
