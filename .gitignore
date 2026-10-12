@@ -1,0 +1,10 @@
+# Editor and OS clutter
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json

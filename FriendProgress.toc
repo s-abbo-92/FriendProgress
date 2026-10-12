@@ -1,0 +1,18 @@
+## Interface: 16001
+## Title: FriendProgress
+## Notes: See your friends' level, gear, bags, professions and quests in one place.
+## Author: Sean Abbott
+## Version: 0.1.0
+## SavedVariables: FriendProgressDB
+## IconTexture: Interface\Icons\INV_Misc_GroupLooking
+## AddonCompartmentFunc: FriendProgress_OnAddonCompartmentClick
+
+Core.lua
+Serialize.lua
+Collect.lua
+Share.lua
+Comm.lua
+Groups.lua
+UI.lua
+PartyXP.lua
+SyncButton.lua
