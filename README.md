@@ -63,6 +63,12 @@ and the post goes out right after. If you're resurrected instead, it posts at yo
 Run `Install.cmd` again to change the webhook or after updating the addon. `Uninstall.cmd` removes
 the relay. If nothing posts, look at `%LOCALAPPDATA%\FriendProgress\relay.log`.
 
+Each post gets a joke picked to match the death: falls, drowning, murlocs, Hogger, getting killed
+by something far below your level, your tenth death, and so on. They're all in
+`discord\DeathQuips.json`. Add your own lines there (and send them in so everyone gets them).
+`_killers` maps patterns in the killer's name to a category. To turn jokes off, add
+`"humour": false` to `%LOCALAPPDATA%\FriendProgress\DeathRelay.config.json`.
+
 ## Good to know
 
 - The bank and recipes can only be read while they're open in game, so they show

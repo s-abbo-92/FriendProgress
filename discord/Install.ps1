@@ -88,6 +88,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item (Join-Path $PSScriptRoot "DeathRelay.ps1") $relayPath -Force
 Unblock-File $relayPath
+Copy-Item (Join-Path $PSScriptRoot "DeathQuips.json") $dest -Force
 @{ webhookUrl = $url; wowFolder = $wow } | ConvertTo-Json | Set-Content $configPath -Encoding UTF8
 
 $relayArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$relayPath`""

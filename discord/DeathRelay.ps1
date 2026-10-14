@@ -74,11 +74,63 @@ function Format-Death($d) {
     return "$who died$last$zone."
 }
 
+# A joke line for the post, from DeathQuips.json next to this script. Read on every
+# death so edits apply without a restart. Set "humour": false in the config to turn off.
+function Get-Quip($d) {
+    $path = Join-Path $PSScriptRoot "DeathQuips.json"
+    if ($cfg.humour -eq $false -or -not (Test-Path $path)) { return $null }
+    try { $quips = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
+
+    $level = [int]$d.Level
+    $klevel = if ($d.KillerLevel) { [int]$d.KillerLevel } else { $null }
+    # Most specific first; the first category that applies and has usable lines wins.
+    $categories = @()
+    if ($d.Kind -eq "test") { $categories += "test" }
+    switch ($d.Ability) {
+        "Falling" { $categories += "falling" }
+        "Drowning" { $categories += "drowning" }
+        "Fatigue" { $categories += "fatigue" }
+        { $_ -in "Fire", "Lava", "Slime" } { $categories += "fire" }
+    }
+    if ($d.Killer -and $quips._killers) {
+        foreach ($p in $quips._killers.PSObject.Properties) {
+            if ($d.Killer -match $p.Name) { $categories += $p.Value; break }
+        }
+    }
+    if ($null -ne $klevel -and $klevel -lt 0) { $categories += "skull" }
+    if ($null -ne $klevel -and $klevel -gt 0 -and $level - $klevel -ge 4) { $categories += "outlevelled" }
+    if ($d.Count -ge 3) { $categories += "veteran" }
+    if ($level -le 5) { $categories += "lowlevel" }
+    if ($level -ge 60) { $categories += "maxlevel" }
+    $categories += "generic"
+
+    $values = @{
+        name = $d.Short; level = $d.Level; killer = $d.Killer; klevel = $d.KillerLevel
+        zone = $d.Zone; ability = $d.Ability; count = $d.Count
+    }
+    foreach ($cat in $categories) {
+        # Skip lines whose placeholders we can't fill (e.g. {killer} after a fall).
+        $usable = @($quips.$cat | Where-Object {
+            $line = $_
+            -not ([regex]::Matches($line, '\{(\w+)\}') | Where-Object { -not $values[$_.Groups[1].Value] })
+        })
+        if ($usable.Count -gt 0) {
+            $line = $usable | Get-Random
+            foreach ($k in $values.Keys) { $line = $line.Replace("{$k}", "$($values[$k])") }
+            return $line
+        }
+    }
+    return $null
+}
+
 function Send-Death($d) {
     $title = if ($d.Kind -eq "test") { "[Test] $($d.Short) has died" } else { "$($d.Short) has died" }
+    $description = Format-Death $d
+    $quip = Get-Quip $d
+    if ($quip) { $description += "`n`n*$quip*" }
     $embed = @{
         title       = $title
-        description = Format-Death $d
+        description = $description
         color       = if ($ClassColors.ContainsKey($d.Class)) { $ClassColors[$d.Class] } else { 0x808080 }
         timestamp   = [DateTimeOffset]::FromUnixTimeSeconds($d.Time).UtcDateTime.ToString("o")
         footer      = @{ text = $d.Name }
@@ -143,6 +195,8 @@ while ($true) {
             $key = "$($d.Name);$($d.Time);$($d.Kind)"
             if ($posted.Contains($key)) { continue }
             if ($now - $d.Time -gt $MaxAge) { [void]$posted.Add($key); continue }
+            # This character's death count, for the "veteran" quips.
+            $d | Add-Member Count (1 + @($posted | Where-Object { $_ -like "$($d.Name);*;death" }).Count)
             if (Send-Death $d) {
                 [void]$posted.Add($key)
                 Add-Content $postedPath $key
