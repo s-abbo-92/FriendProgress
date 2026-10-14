@@ -582,7 +582,7 @@ local function BuildSettings()
         function() return ns.db.settings.deaths.alerts end,
         function(v) ns.db.settings.deaths.alerts = v end, nil,
         function() end)
-    Check("Discord relay on this PC",
+    Check("Post my deaths to Discord",
         function() return ns.db.settings.deaths.relay end,
         function(v) ns.db.settings.deaths.relay = v end, nil,
         function(v) ns.SetDeathRelay(v) end)

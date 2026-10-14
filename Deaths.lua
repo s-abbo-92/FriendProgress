@@ -2,10 +2,11 @@
 -- is broadcast to everyone you sync with; they get a raid-warning style alert
 -- and every death is kept in the Deaths tab.
 --
--- Discord relay: addons can't reach the internet, so one player turns on the
--- relay and their addon whispers each death to themselves as a "FPDEATH;" line.
--- With chat logging on, WoW writes it to Logs\WoWChatLog.txt, where the
--- companion script (discord\DeathRelay.ps1) picks it up and posts it.
+-- Discord relay: addons can't reach the internet, so each player who wants
+-- their deaths posted installs the relay (discord\Install.cmd) and turns on
+-- /fp discord. Their addon then whispers each of their own deaths to themselves
+-- as a "FPDEATH;" line; with chat logging on, WoW writes it to
+-- Logs\WoWChatLog.txt, where the relay (discord\DeathRelay.ps1) posts it.
 local _, ns = ...
 
 local MAX_LOG = 300
@@ -338,7 +339,6 @@ ns.OnMessage("K", function(sender, rest)
     }
     if not Record(d) then return end   -- already heard it via another channel
     Alert(d)
-    Relay(d)
 end)
 
 ---------------------------------------------------------------------------
@@ -348,9 +348,10 @@ function ns.SetDeathRelay(enabled)
     Settings().relay = enabled
     if enabled then
         LoggingChat(true)
-        ns.Print("Discord relay on. Chat logging is on; run discord\\DeathRelay.ps1 on this PC.")
+        ns.Print("Your deaths will be posted to Discord (needs discord\\Install.cmd run on this PC). "
+            .. "Test with /fp deaths test.")
     else
-        ns.Print("Discord relay off.")
+        ns.Print("Your deaths won't be posted to Discord.")
     end
 end
 

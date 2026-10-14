@@ -30,7 +30,7 @@ local DEFAULTS = {
         deaths = {
             alerts = true,  -- raid-warning style alert when a friend dies
             sound = true,
-            relay = false,  -- write deaths to the chat log for the Discord script
+            relay = false,  -- write our deaths to the chat log for the Discord relay
         },
         autoSync = 10,      -- minutes between background syncs; 0 = off
         locked = true,      -- on-screen frames (party XP box, sync button) can't be dragged
@@ -212,7 +212,7 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         Print("/fp notify - toggle chat notifications for friend activity")
         Print("/fp deaths - death log; /fp deaths alerts - toggle alerts; /fp deaths test - preview")
         Print("/fp deaths debug - what the combat log showed before your last death")
-        Print("/fp discord - toggle the Discord death relay on this character")
+        Print("/fp discord - post your deaths to Discord (needs the relay installed)")
         Print("/fp remove Name-Realm - forget a character")
     end
 end

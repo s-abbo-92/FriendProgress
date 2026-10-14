@@ -9,5 +9,6 @@ desktop.ini
 # Claude Code local settings
 .claude/settings.local.json
 
-# Discord relay config (holds the webhook URL)
+# Discord relay files from running it in place (holds the webhook URL)
 discord/DeathRelay.config.json
+discord/relay.log

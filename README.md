@@ -35,7 +35,7 @@ addon messages through your guild, your group and your in-game friends list.
 | `/fp deaths alerts` | On-screen death alerts on or off |
 | `/fp deaths test` | Preview a death alert (and test the Discord relay) |
 | `/fp deaths debug` | Show the damage the addon saw before your last death |
-| `/fp discord` | Discord death relay on or off for this character |
+| `/fp discord` | Post your deaths to Discord on or off (needs the relay, see below) |
 | `/fp remove Name-Realm` | Forget a character |
 
 ## Death log and Discord
@@ -44,22 +44,23 @@ When you die, FriendProgress tells everyone you sync with who or what killed you
 your level and the zone. They get a raid-warning style alert, and every death is
 kept in the **Deaths** tab. Turn off **Announce my deaths** in **Sharing...** to keep yours private.
 
-To post deaths to a Discord channel, one player (whoever usually plays the most) runs a relay:
+### Posting your deaths to Discord
 
-1. In Discord: channel settings > Integrations > Webhooks > New Webhook, then copy its URL.
-2. Copy `discord\DeathRelay.config.example.json` to `discord\DeathRelay.config.json`.
-   Paste the webhook URL and set `chatLog` to your `World of Warcraft\<version>\Logs\WoWChatLog.txt`.
-   Keep this file private: anyone with the URL can post to your channel.
-3. In game, type `/fp discord`. This turns on chat logging, and your addon writes each death
-   it hears about to the chat log (as a hidden whisper to yourself).
-4. Run the relay while you play:
-   ```
-   powershell -ExecutionPolicy Bypass -File discord\DeathRelay.ps1
-   ```
-5. `/fp deaths test` sends a test post.
+Everyone who wants their deaths posted installs a small relay on their own PC.
+Addons can't reach the internet, so your addon writes your deaths to WoW's chat log
+(as a hidden whisper to yourself) and the relay posts them to Discord.
 
-The relay only sees deaths while you're online. WoW writes the chat log in batches,
-so posts can lag the death by a few seconds. Run only one relay, or each death posts once per relay.
+1. Get the webhook URL from whoever runs the Discord server. To make one: channel settings >
+   Integrations > Webhooks > New Webhook > Copy Webhook URL. Only share it with friends:
+   anyone with the URL can post in that channel.
+2. Double-click `Install.cmd` in the addon's `discord` folder and paste the URL when asked.
+   It finds your WoW folder, then runs the relay hidden in the background, now and whenever Windows starts.
+3. In game, type `/fp discord` (once; it covers all your characters). This also turns on chat logging.
+4. `/fp deaths test` should make a "[Test]" post appear within a few seconds.
+
+Run `Install.cmd` again to change the webhook or after updating the addon. `Uninstall.cmd` removes
+the relay. If nothing posts, look at `%LOCALAPPDATA%\FriendProgress\relay.log`.
+WoW writes the chat log in batches, so posts can lag the death by a few seconds.
 
 ## Good to know
 

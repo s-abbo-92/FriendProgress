@@ -1,11 +1,12 @@
 # DeathRelay: posts FriendProgress deaths to a Discord webhook.
 #
-# The addon (with /fp discord on) whispers each death to its own character as a
+# The addon (with /fp discord on) whispers each of your deaths to yourself as a
 # "FPDEATH;..." line. WoW writes chat to Logs\WoWChatLog.txt while chat logging
 # is on, and this script follows that file and posts every new death.
 #
-# Setup: copy DeathRelay.config.example.json to DeathRelay.config.json next to
-# this script, fill in your webhook URL and chat log path, then run:
+# Install.cmd copies this script to %LOCALAPPDATA%\FriendProgress, writes the
+# config next to it and starts it hidden with Windows. Output goes to relay.log there.
+# To run it by hand instead:
 #   powershell -ExecutionPolicy Bypass -File DeathRelay.ps1
 param(
     [string]$Config = (Join-Path $PSScriptRoot "DeathRelay.config.json")
@@ -13,6 +14,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# One relay at a time, or each death would post twice.
+$mutex = New-Object System.Threading.Mutex($false, "Local\FriendProgressDeathRelay")
+if (-not $mutex.WaitOne(0)) {
+    Write-Host "The death relay is already running."
+    exit
+}
+try { Start-Transcript -Path (Join-Path $PSScriptRoot "relay.log") -Force | Out-Null } catch { }
 
 if (-not (Test-Path $Config)) {
     Write-Error "No config at $Config. Copy DeathRelay.config.example.json to DeathRelay.config.json and fill it in."
@@ -100,7 +109,8 @@ Write-Host "Watching $log. Ctrl+C to stop."
 $seen = New-Object 'System.Collections.Generic.HashSet[string]'
 
 Get-Content $log -Wait -Tail 0 -Encoding UTF8 | ForEach-Object {
-    if ($_ -notmatch 'FPDEATH;(\d+);(\w+);(.*)$') { return }
+    $line = $_
+    if ($line -notmatch 'FPDEATH;(\d+);(\w+);(.*)$') { return }
     # Version 1: name;level;class;zone;killer;ability;time. Version 2 adds damage;killerLevel;subzone.
     if ($Matches[1] -notin "1", "2") { Write-Warning "Unknown relay version $($Matches[1]); update this script."; return }
     $kind = $Matches[2]
@@ -113,6 +123,9 @@ Get-Content $log -Wait -Tail 0 -Encoding UTF8 | ForEach-Object {
         KillerLevel = if ($f.Count -gt 8) { $f[8] } else { "" }
         Subzone = if ($f.Count -gt 9) { $f[9] } else { "" }
     }
+    # The addon only whispers our own deaths to ourselves. Ignore anyone else
+    # whispering us a fake one: their name won't match the dead character's.
+    if ($line -match '\[?([^\s\[\]:]+)\]? whispers:' -and ($Matches[1] -split '-')[0] -ne $d.Short) { return }
     if (-not $seen.Add("$($d.Name);$($d.Time);$kind")) { return }
     Send-Death $d
 }
