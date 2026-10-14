@@ -4,6 +4,8 @@
 --   H|<proto>|<reply>|sec=hash,sec=hash,...   "here is what I have"; reply=1 asks for your H back
 --   Q|sec,sec,...                              "send me these sections" (always whispered)
 --   D|<id>|<i>|<n>|<chunk>                     section data, split into <n> chunks
+--   X|...                                      live XP to the group (below)
+--   K|...                                      a death (Deaths.lua)
 -- A receiver compares hashes from H with what it has stored and only pulls what changed.
 local _, ns = ...
 
@@ -87,7 +89,12 @@ function ns.SayHello(reply, force)
         return
     end
     lastHello = now
-    local text = HelloText(reply)
+    ns.Broadcast(HelloText(reply))
+end
+
+-- Send to everyone we can reach. Friends who are also in our guild or group get
+-- it more than once, so receivers of one-off messages must dedupe.
+function ns.Broadcast(text)
     if IsInGuild() then Send(text, "GUILD") end
     local group = GroupChannel()
     if group then Send(text, group) end
@@ -163,6 +170,9 @@ local function OnSection(sender, payload)
 end
 
 local handlers = {}
+
+-- Other modules add message kinds: fn(sender, rest) handles "<kind>|<rest>".
+function ns.OnMessage(kind, fn) handlers[kind] = fn end
 
 handlers.H = function(sender, rest)
     local proto, reply, list = rest:match("^(%d+)|(%d)|(.*)$")

@@ -10,6 +10,7 @@ ns.SECTIONS = { "char", "gear", "bags", "bank", "prof", "recipes", "quest", "log
 
 local DEFAULTS = {
     chars = {},        -- [ "Name-Realm" ] = { sections = {}, hashes = {}, lastSeen = n, isMine = bool }
+    deaths = {},       -- newest first: { name, class, level, zone, killer, ability, t }
     settings = {
         notify = true,
         -- What this player sends to others. Their own view always has everything.
@@ -24,6 +25,12 @@ local DEFAULTS = {
             quest = true,
             log = true,
             liveXP = true,  -- broadcast XP to the current party for the party XP box
+            deaths = true,  -- announce our deaths
+        },
+        deaths = {
+            alerts = true,  -- raid-warning style alert when a friend dies
+            sound = true,
+            relay = false,  -- write deaths to the chat log for the Discord script
         },
         autoSync = 10,      -- minutes between background syncs; 0 = off
         locked = true,      -- on-screen frames (party XP box, sync button) can't be dragged
@@ -168,6 +175,20 @@ SlashCmdList.FRIENDPROGRESS = function(input)
     elseif cmd == "notify" then
         ns.db.settings.notify = not ns.db.settings.notify
         Print("Chat notifications " .. (ns.db.settings.notify and "on" or "off") .. ".")
+    elseif cmd == "deaths" then
+        if rest == "test" then
+            ns.TestDeath()
+        elseif rest == "alerts" then
+            local s = ns.db.settings.deaths
+            s.alerts = not s.alerts
+            if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
+            Print("Death alerts " .. (s.alerts and "on" or "off") .. ".")
+        else
+            ns.ShowTab("deaths")
+        end
+    elseif cmd == "discord" then
+        ns.SetDeathRelay(not ns.db.settings.deaths.relay)
+        if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
     elseif cmd == "remove" and rest ~= "" then
         local key = ns.FullName(rest)
         if ns.db.chars[key] then
@@ -187,6 +208,8 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         Print("/fp unlock, /fp lock - move the on-screen frames")
         Print("/fp autosync <minutes> - background sync interval, 0 = off")
         Print("/fp notify - toggle chat notifications for friend activity")
+        Print("/fp deaths - death log; /fp deaths alerts - toggle alerts; /fp deaths test - preview")
+        Print("/fp discord - toggle the Discord death relay on this character")
         Print("/fp remove Name-Realm - forget a character")
     end
 end

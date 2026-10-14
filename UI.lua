@@ -13,6 +13,7 @@ local TABS = {
     { "prof", "Professions" },
     { "quest", "Quests" },
     { "log", "Activity" },
+    { "deaths", "Deaths" },
 }
 
 local SLOT_NAMES = {
@@ -22,7 +23,7 @@ local SLOT_NAMES = {
     [16] = "Main Hand", [17] = "Off Hand", [18] = "Ranged", [19] = "Tabard",
 }
 
-local WIDTH, HEIGHT = 840, 520   -- minimum size; widens if the tab labels need it
+local WIDTH, HEIGHT = 840, 570   -- minimum size; widens if the tab labels need it
 local LIST_W = 190
 local RIGHT_X = 236   -- left edge of tabs / body / settings
 
@@ -309,6 +310,18 @@ function render.log(c)
     return lines
 end
 
+-- Everyone's deaths, not just the selected character's (filtered by the group dropdown).
+function render.deaths()
+    local lines = {}
+    for _, d in ipairs(ns.db.deaths) do
+        if ns.PassesFilter(d.name) then
+            lines[#lines + 1] = Gray(date("%d %b %H:%M", d.t)) .. "  " .. ns.DeathText(d)
+        end
+    end
+    if #lines == 0 then return { "No deaths yet. Long may it last." } end
+    return lines
+end
+
 ---------------------------------------------------------------------------
 -- Character list and its right-click menu
 ---------------------------------------------------------------------------
@@ -515,6 +528,10 @@ local function BuildSettings()
         function(v) share().recipes = v end, 24)
     Toggle("Quest log", "quest")
     Toggle("Activity feed", "log")
+    Check("Announce my deaths",
+        function() return share().deaths end,
+        function(v) share().deaths = v end, nil,
+        function() end)
     Check("Live XP to your party",
         function() return share().liveXP end,
         function(v) share().liveXP = v end, nil,
@@ -561,6 +578,14 @@ local function BuildSettings()
         function() return ns.db.settings.notify end,
         function(v) ns.db.settings.notify = v end, nil,
         function() end)
+    Check("Death alerts on screen",
+        function() return ns.db.settings.deaths.alerts end,
+        function(v) ns.db.settings.deaths.alerts = v end, nil,
+        function() end)
+    Check("Discord relay on this PC",
+        function() return ns.db.settings.deaths.relay end,
+        function(v) ns.db.settings.deaths.relay = v end, nil,
+        function(v) ns.SetDeathRelay(v) end)
 
     panel:SetScript("OnShow", RefreshSettings)
     -- Lock/unlock can also change via slash commands while the panel is open.
@@ -762,6 +787,12 @@ function ns.ShowRecipeSearch(text)
     frame:Show()
     frame.search:SetText(text or "")   -- triggers a refresh
     ns.RefreshUI()
+end
+
+function ns.ShowTab(name)
+    if not frame then Build() end
+    tab, showSettings = name, false
+    if frame:IsShown() then ns.RefreshUI() else frame:Show() end
 end
 
 function ns.ShowSettings()
