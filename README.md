@@ -8,11 +8,13 @@ addon messages through your guild, your group and your in-game friends list.
 
 ## Install
 
-1. Download this repository (Code > Download ZIP) and extract it.
-2. Rename the extracted folder to `FriendProgress` if needed (GitHub adds `-main`).
-3. Move it to `World of Warcraft\_classic_beta_\Interface\AddOns\`.
-   The folder must contain `FriendProgress.toc` directly.
-4. Restart the game or type `/reload`.
+1. Get `FriendProgress-<version>.zip` from whoever shares it with you.
+2. Extract it into `World of Warcraft\_classic_beta_\Interface\AddOns\`. You should end up with
+   `AddOns\FriendProgress\FriendProgress.toc`. To update, delete the old `FriendProgress` folder first.
+3. Restart the game or type `/reload`.
+4. Optional: to post your deaths to Discord, see [Posting your deaths to Discord](#posting-your-deaths-to-discord).
+
+Everyone you sync with should be on the same version; deaths from older versions don't show up.
 
 ## Using it
 
@@ -84,3 +86,14 @@ powershell -ExecutionPolicy Bypass -File tools\Build-Quips.ps1
   what was there the last time that character visited a banker or opened that profession.
 - Sync only happens while you're both online and connected (same guild, group, or friends list).
   Otherwise you see their last snapshot.
+
+## Making a release
+
+1. Bump `## Version:` in `FriendProgress.toc` and `ns.VERSION` in `Core.lua` (they must match).
+2. Commit, then run:
+   ```
+   powershell -ExecutionPolicy Bypass -File tools\Package.ps1
+   ```
+3. Send `dist\FriendProgress-<version>.zip` to your friends.
+
+The zip is built from the last commit, so uncommitted changes aren't in it.

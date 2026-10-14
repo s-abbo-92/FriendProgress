@@ -1,0 +1,4 @@
+# Left out of the release zip built by tools/Package.ps1 (git archive).
+.gitattributes export-ignore
+.gitignore export-ignore
+tools/ export-ignore

@@ -13,3 +13,6 @@ desktop.ini
 discord/DeathRelay.config.json
 discord/relay.log
 discord/posted.txt
+
+# Release zips from tools/Package.ps1
+dist/

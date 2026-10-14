@@ -2,7 +2,7 @@
 ## Title: FriendProgress
 ## Notes: See your friends' level, gear, bags, professions and quests in one place.
 ## Author: Sean Abbott
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: FriendProgressDB
 ## IconTexture: Interface\Icons\INV_Misc_GroupLooking
 ## AddonCompartmentFunc: FriendProgress_OnAddonCompartmentClick
