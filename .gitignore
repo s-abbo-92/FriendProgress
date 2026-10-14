@@ -12,3 +12,4 @@ desktop.ini
 # Discord relay files from running it in place (holds the webhook URL)
 discord/DeathRelay.config.json
 discord/relay.log
+discord/posted.txt

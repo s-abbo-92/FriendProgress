@@ -47,20 +47,21 @@ kept in the **Deaths** tab. Turn off **Announce my deaths** in **Sharing...** to
 ### Posting your deaths to Discord
 
 Everyone who wants their deaths posted installs a small relay on their own PC.
-Addons can't reach the internet, so your addon writes your deaths to WoW's chat log
-(as a hidden whisper to yourself) and the relay posts them to Discord.
+Addons can't reach the internet, so your addon saves your deaths in its saved data
+and the relay posts them to Discord. WoW only writes that data to disk on `/reload`,
+logout or exit, so **releasing spirit reloads your UI** (a few seconds, while you're a ghost anyway)
+and the post goes out right after. If you're resurrected instead, it posts at your next reload or logout.
 
 1. Get the webhook URL from whoever runs the Discord server. To make one: channel settings >
    Integrations > Webhooks > New Webhook > Copy Webhook URL. Only share it with friends:
    anyone with the URL can post in that channel.
 2. Double-click `Install.cmd` in the addon's `discord` folder and paste the URL when asked.
    It finds your WoW folder, then runs the relay hidden in the background, now and whenever Windows starts.
-3. In game, type `/fp discord` (once; it covers all your characters). This also turns on chat logging.
-4. `/fp deaths test` should make a "[Test]" post appear within a few seconds.
+3. In game, type `/fp discord` (once; it covers all your characters).
+4. `/fp deaths test` reloads your UI, and a "[Test]" post should appear within a few seconds.
 
 Run `Install.cmd` again to change the webhook or after updating the addon. `Uninstall.cmd` removes
 the relay. If nothing posts, look at `%LOCALAPPDATA%\FriendProgress\relay.log`.
-WoW writes the chat log in batches, so posts can lag the death by a few seconds.
 
 ## Good to know
 

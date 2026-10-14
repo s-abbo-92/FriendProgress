@@ -10,4 +10,4 @@ Remove-Item $shortcutPath -Force -ErrorAction SilentlyContinue
 Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host "FriendProgress death relay removed." -ForegroundColor Green
-Write-Host "In game, /fp discord turns off posting (and stops writing deaths to the chat log)."
+Write-Host "In game, /fp discord turns off posting (and the reload on release spirit)."

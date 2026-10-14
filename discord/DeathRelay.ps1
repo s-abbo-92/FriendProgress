@@ -1,8 +1,9 @@
-# DeathRelay: posts FriendProgress deaths to a Discord webhook.
+# DeathRelay: posts your FriendProgress deaths to a Discord webhook.
 #
-# The addon (with /fp discord on) whispers each of your deaths to yourself as a
-# "FPDEATH;..." line. WoW writes chat to Logs\WoWChatLog.txt while chat logging
-# is on, and this script follows that file and posts every new death.
+# The addon (with /fp discord on) queues each of your deaths as a "FPDEATH;..."
+# line in its saved variables (WTF\Account\<account>\SavedVariables\FriendProgress.lua).
+# WoW writes that file on /reload, logout and exit, and the addon reloads your UI
+# when you release spirit, so a death posts a few seconds after you release.
 #
 # Install.cmd copies this script to %LOCALAPPDATA%\FriendProgress, writes the
 # config next to it and starts it hidden with Windows. Output goes to relay.log there.
@@ -24,7 +25,7 @@ if (-not $mutex.WaitOne(0)) {
 try { Start-Transcript -Path (Join-Path $PSScriptRoot "relay.log") -Force | Out-Null } catch { }
 
 if (-not (Test-Path $Config)) {
-    Write-Error "No config at $Config. Copy DeathRelay.config.example.json to DeathRelay.config.json and fill it in."
+    Write-Error "No config at $Config. Run Install.cmd from the addon's discord folder."
 }
 $cfg = Get-Content $Config -Raw | ConvertFrom-Json
 if (-not $cfg.webhookUrl -or $cfg.webhookUrl -notmatch '^https://(\w+\.)?discord(app)?\.com/api/webhooks/') {
@@ -88,44 +89,70 @@ function Send-Death($d) {
         try {
             Invoke-RestMethod -Uri $cfg.webhookUrl -Method Post -ContentType "application/json; charset=utf-8" -Body $bytes | Out-Null
             Write-Host "Posted: $($d.Short) ($($d.Kind))"
-            return
+            return $true
         } catch {
             $status = $_.Exception.Response.StatusCode.value__
             if ($status -eq 429) { Start-Sleep -Seconds 2; continue }   # Discord rate limit
             Write-Warning "Discord post failed ($status): $($_.Exception.Message)"
-            return
+            return $false
+        }
+    }
+    return $false
+}
+
+# Older installs stored the chat log path: <wow>\Logs\WoWChatLog.txt.
+$wow = if ($cfg.wowFolder) { $cfg.wowFolder } else { Split-Path (Split-Path $cfg.chatLog) }
+$pattern = Join-Path $wow "WTF\Account\*\SavedVariables\FriendProgress.lua"
+$MaxAge = 24 * 3600   # don't post deaths older than this (e.g. the backlog on first install)
+
+# What we've posted, kept across restarts so a reload doesn't repost old deaths.
+$postedPath = Join-Path $PSScriptRoot "posted.txt"
+$posted = New-Object 'System.Collections.Generic.HashSet[string]'
+if (Test-Path $postedPath) { Get-Content $postedPath | ForEach-Object { [void]$posted.Add($_) } }
+
+function Read-Deaths($file) {
+    # Saved as quoted strings in FriendProgressDB.relayQueue; the addon strips quotes from the fields.
+    $text = [IO.File]::ReadAllText($file, [Text.Encoding]::UTF8)
+    foreach ($m in [regex]::Matches($text, '"FPDEATH;(\d+);(\w+);([^"]*)"')) {
+        # Version 1: name;level;class;zone;killer;ability;time. Version 2 adds damage;killerLevel;subzone.
+        if ($m.Groups[1].Value -notin "1", "2") { continue }
+        $f = $m.Groups[3].Value.Split(';')
+        if ($f.Count -lt 7) { continue }
+        [pscustomobject]@{
+            Kind = $m.Groups[2].Value; Name = $f[0]; Short = ($f[0] -split '-')[0]; Level = $f[1]; Class = $f[2]
+            Zone = $f[3]; Killer = $f[4]; Ability = $f[5]; Time = [long]$f[6]
+            Damage = if ($f.Count -gt 7) { $f[7] } else { "" }
+            KillerLevel = if ($f.Count -gt 8) { $f[8] } else { "" }
+            Subzone = if ($f.Count -gt 9) { $f[9] } else { "" }
         }
     }
 }
 
-$log = $cfg.chatLog
-while (-not (Test-Path $log)) {
-    Write-Host "Waiting for $log (turn on /fp discord in game)..."
-    Start-Sleep -Seconds 10
-}
-Write-Host "Watching $log. Ctrl+C to stop."
-
-# Each death shows up twice (the "To" and "whispers" lines), so remember what we posted.
-$seen = New-Object 'System.Collections.Generic.HashSet[string]'
-
-Get-Content $log -Wait -Tail 0 -Encoding UTF8 | ForEach-Object {
-    $line = $_
-    if ($line -notmatch 'FPDEATH;(\d+);(\w+);(.*)$') { return }
-    # Version 1: name;level;class;zone;killer;ability;time. Version 2 adds damage;killerLevel;subzone.
-    if ($Matches[1] -notin "1", "2") { Write-Warning "Unknown relay version $($Matches[1]); update this script."; return }
-    $kind = $Matches[2]
-    $f = $Matches[3].Split(';')
-    if ($f.Count -lt 7) { return }
-    $d = [pscustomobject]@{
-        Kind = $kind; Name = $f[0]; Short = ($f[0] -split '-')[0]; Level = $f[1]; Class = $f[2]
-        Zone = $f[3]; Killer = $f[4]; Ability = $f[5]; Time = [long]$f[6]
-        Damage = if ($f.Count -gt 7) { $f[7] } else { "" }
-        KillerLevel = if ($f.Count -gt 8) { $f[8] } else { "" }
-        Subzone = if ($f.Count -gt 9) { $f[9] } else { "" }
+Write-Host "Watching $pattern. Ctrl+C to stop."
+$lastWrite = @{}   # file -> LastWriteTime we've processed
+$retryAt = @{}     # file -> when to retry after a failed post
+while ($true) {
+    foreach ($file in Get-ChildItem $pattern -ErrorAction SilentlyContinue) {
+        $changed = $lastWrite[$file.FullName] -ne $file.LastWriteTimeUtc
+        $retry = $retryAt[$file.FullName] -and (Get-Date) -ge $retryAt[$file.FullName]
+        if (-not $changed -and -not $retry) { continue }
+        try { $deaths = @(Read-Deaths $file.FullName) } catch { continue }   # mid-write; next pass
+        $failed = $false
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        foreach ($d in $deaths) {
+            $key = "$($d.Name);$($d.Time);$($d.Kind)"
+            if ($posted.Contains($key)) { continue }
+            if ($now - $d.Time -gt $MaxAge) { [void]$posted.Add($key); continue }
+            if (Send-Death $d) {
+                [void]$posted.Add($key)
+                Add-Content $postedPath $key
+            } else {
+                $failed = $true
+            }
+        }
+        # On failure, try that file again in a minute.
+        $lastWrite[$file.FullName] = $file.LastWriteTimeUtc
+        $retryAt[$file.FullName] = if ($failed) { (Get-Date).AddMinutes(1) } else { $null }
     }
-    # The addon only whispers our own deaths to ourselves. Ignore anyone else
-    # whispering us a fake one: their name won't match the dead character's.
-    if ($line -match '\[?([^\s\[\]:]+)\]? whispers:' -and ($Matches[1] -split '-')[0] -ne $d.Short) { return }
-    if (-not $seen.Add("$($d.Name);$($d.Time);$kind")) { return }
-    Send-Death $d
+    Start-Sleep -Seconds 3
 }

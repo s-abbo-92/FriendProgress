@@ -11,6 +11,7 @@ ns.SECTIONS = { "char", "gear", "bags", "bank", "prof", "recipes", "quest", "log
 local DEFAULTS = {
     chars = {},        -- [ "Name-Realm" ] = { sections = {}, hashes = {}, lastSeen = n, isMine = bool }
     deaths = {},       -- newest first: { name, class, level, zone, killer, ability, t }
+    relayQueue = {},   -- our own deaths as "FPDEATH;..." lines for the Discord relay
     settings = {
         notify = true,
         -- What this player sends to others. Their own view always has everything.
@@ -30,7 +31,7 @@ local DEFAULTS = {
         deaths = {
             alerts = true,  -- raid-warning style alert when a friend dies
             sound = true,
-            relay = false,  -- write our deaths to the chat log for the Discord relay
+            relay = false,  -- queue our deaths for the Discord relay; reload on release spirit
         },
         autoSync = 10,      -- minutes between background syncs; 0 = off
         locked = true,      -- on-screen frames (party XP box, sync button) can't be dragged

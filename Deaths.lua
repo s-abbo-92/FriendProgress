@@ -4,9 +4,9 @@
 --
 -- Discord relay: addons can't reach the internet, so each player who wants
 -- their deaths posted installs the relay (discord\Install.cmd) and turns on
--- /fp discord. Their addon then whispers each of their own deaths to themselves
--- as a "FPDEATH;" line; with chat logging on, WoW writes it to
--- Logs\WoWChatLog.txt, where the relay (discord\DeathRelay.ps1) posts it.
+-- /fp discord. Their addon then queues each of their own deaths as a "FPDEATH;"
+-- line in FriendProgressDB.relayQueue; once WoW writes the saved variables file,
+-- the relay (discord\DeathRelay.ps1) posts the new lines.
 local _, ns = ...
 
 local MAX_LOG = 300
@@ -27,9 +27,10 @@ local ENVIRONMENT = {
 
 local function Settings() return ns.db.settings.deaths end
 
--- Fields travel in "|" and ";" separated messages, so strip both.
+-- Fields travel in "|" and ";" separated messages and the relay reads them out of
+-- quoted Lua strings in the saved variables, so strip separators, quotes and backslashes.
 local function Clean(s, max)
-    s = tostring(s or ""):gsub("[|;]", "")
+    s = tostring(s or ""):gsub("[|;\"\\]", "")
     return s:sub(1, max or 60)
 end
 
@@ -94,6 +95,11 @@ local function Alert(d)
     if Settings().sound then PlaySound(SOUNDKIT.RAID_WARNING, "Master") end
 end
 
+-- The relay reads these from the saved variables file, which WoW only writes on
+-- /reload, logout or exit. So after a death we reload when you release spirit.
+local RELAY_QUEUE_MAX = 20
+local unsaved = false   -- a death was queued since the saved variables were last written
+
 local function Relay(d, test)
     if not Settings().relay or not ns.me then return end
     local line = table.concat({
@@ -101,15 +107,16 @@ local function Relay(d, test)
         Clean(d.name), d.level or 0, Clean(d.class), Clean(d.zone), Clean(d.killer), Clean(d.ability), d.t,
         d.damage or "", d.klevel or "", Clean(d.subzone),
     }, ";")
-    SendChatMessage(line, "WHISPER", nil, UnitName("player"))
+    local queue = ns.db.relayQueue
+    queue[#queue + 1] = line
+    while #queue > RELAY_QUEUE_MAX do table.remove(queue, 1) end
+    unsaved = true
 end
 
--- Keep the relay whispers out of the chat window; WoW still writes them to the chat log.
-local function HideRelayLine(_, _, msg)
-    return msg:sub(1, #RELAY_TAG + 1) == RELAY_TAG .. ";"
-end
-ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", HideRelayLine)
-ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", HideRelayLine)
+-- Release Spirit is a click, so reloading from it is allowed.
+hooksecurefunc("RepopMe", function()
+    if unsaved and Settings().relay then ReloadUI() end
+end)
 
 local function Record(d)
     if Known(d) then return false end
@@ -320,7 +327,6 @@ end)
 ns:Listen("LOGIN", function()
     playerGUID = UnitGUID("player")
     loginTime = GetTime()
-    if Settings().relay then LoggingChat(true) end
 end)
 
 ---------------------------------------------------------------------------
@@ -347,15 +353,15 @@ end)
 function ns.SetDeathRelay(enabled)
     Settings().relay = enabled
     if enabled then
-        LoggingChat(true)
         ns.Print("Your deaths will be posted to Discord (needs discord\\Install.cmd run on this PC). "
-            .. "Test with /fp deaths test.")
+            .. "Releasing spirit reloads your UI to send them. Test with /fp deaths test.")
     else
         ns.Print("Your deaths won't be posted to Discord.")
     end
 end
 
 -- Shows a made-up death as an alert and sends it to the relay (marked as a test).
+-- Runs from a slash command, so reloading here is allowed.
 function ns.TestDeath()
     local _, class = UnitClass("player")
     local d = {
@@ -369,7 +375,7 @@ function ns.TestDeath()
     Settings().alerts = alerts
     if Settings().relay then
         Relay(d, true)
-        ns.Print("Test death sent to the Discord relay.")
+        ReloadUI()
     end
 end
 

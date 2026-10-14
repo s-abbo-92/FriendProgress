@@ -39,7 +39,8 @@ function Find-WowFolders {
     return @($found | Select-Object -Unique)
 }
 
-$folders = Find-WowFolders
+# @() because PowerShell returns a single result as a bare string, and "path"[0] is "C".
+$folders = @(Find-WowFolders)
 if ($folders.Count -eq 1) {
     $wow = $folders[0]
 } elseif ($folders.Count -gt 1) {
@@ -53,7 +54,6 @@ if ($folders.Count -eq 1) {
     do { $wow = (Read-Host "Paste the folder that contains Interface\AddOns (e.g. C:\Program Files (x86)\World of Warcraft\_classic_era_)").Trim('"', ' ') }
     until (Test-Path (Join-Path $wow "Interface"))
 }
-$chatLog = Join-Path $wow "Logs\WoWChatLog.txt"
 Write-Host "WoW folder: $wow"
 Write-Host ""
 
@@ -88,7 +88,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item (Join-Path $PSScriptRoot "DeathRelay.ps1") $relayPath -Force
 Unblock-File $relayPath
-@{ webhookUrl = $url; chatLog = $chatLog } | ConvertTo-Json | Set-Content $configPath -Encoding UTF8
+@{ webhookUrl = $url; wowFolder = $wow } | ConvertTo-Json | Set-Content $configPath -Encoding UTF8
 
 $relayArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$relayPath`""
 $shell = New-Object -ComObject WScript.Shell
@@ -106,6 +106,7 @@ Write-Host "Installed. The relay is running now and will start with Windows." -F
 Write-Host ""
 Write-Host "Last step, in game:"
 Write-Host "  /fp discord       turn on posting your deaths (once; it covers all your characters)"
-Write-Host "  /fp deaths test   a [Test] post should appear in Discord within a few seconds"
+Write-Host "                    after you die, releasing spirit reloads your UI and the post goes out"
+Write-Host "  /fp deaths test   reloads your UI; a [Test] post should appear within a few seconds"
 Write-Host ""
 Write-Host "If nothing posts, check $dest\relay.log"
