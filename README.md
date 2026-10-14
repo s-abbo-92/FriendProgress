@@ -34,6 +34,7 @@ addon messages through your guild, your group and your in-game friends list.
 | `/fp deaths` | Death log |
 | `/fp deaths alerts` | On-screen death alerts on or off |
 | `/fp deaths test` | Preview a death alert (and test the Discord relay) |
+| `/fp deaths debug` | Show the damage the addon saw before your last death |
 | `/fp discord` | Discord death relay on or off for this character |
 | `/fp remove Name-Realm` | Forget a character |
 

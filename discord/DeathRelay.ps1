@@ -35,12 +35,33 @@ $Environment = @{
 function Format-Death($d) {
     $class = if ($d.Class) { (Get-Culture).TextInfo.ToTitleCase($d.Class.ToLower()) } else { "" }
     $who = "**$($d.Short)** (level $($d.Level) $class)" -replace ' \)', ')'
-    $zone = if ($d.Zone) { " in $($d.Zone)" } else { "" }
-    if ($d.Killer -and $d.Ability -and $d.Ability -ne "Melee") { return "$who was killed by **$($d.Killer)** ($($d.Ability))$zone." }
-    if ($d.Killer) { return "$who was killed by **$($d.Killer)**$zone." }
-    if ($Environment.ContainsKey($d.Ability)) { return "$who $($Environment[$d.Ability])$zone." }
-    if ($d.Ability) { return "$who was killed by $($d.Ability)$zone." }
-    return "$who died$zone."
+    $zone = ""
+    if ($d.Zone) {
+        $zone = if ($d.Subzone -and $d.Subzone -ne $d.Zone) { " in $($d.Subzone), $($d.Zone)" } else { " in $($d.Zone)" }
+    }
+    $killer = "**$($d.Killer)**"
+    if ($d.KillerLevel -and [int]$d.KillerLevel -lt 0) { $killer += " (level ??)" }
+    elseif ($d.KillerLevel) { $killer += " (level $($d.KillerLevel))" }
+    $dmg = if ($d.Damage -and [int]$d.Damage -gt 0) { $d.Damage } else { $null }
+    if ($d.Killer -and $d.Ability -and $d.Ability -ne "Melee") {
+        $for = if ($dmg) { " for $dmg damage" } else { "" }
+        return "$who was killed by $killer with $($d.Ability)$for$zone."
+    }
+    $last = if ($dmg) { " (last hit $dmg damage)" } else { "" }
+    if ($d.Killer -and $d.Ability -eq "Melee") {
+        $hit = if ($dmg) { " with a melee hit for $dmg damage" } else { "" }
+        return "$who was killed by $killer$hit$zone."
+    }
+    if ($d.Killer) { return "$who was killed by $killer$last$zone." }
+    if ($Environment.ContainsKey($d.Ability)) {
+        $amount = if ($dmg) { " ($dmg damage)" } else { "" }
+        return "$who $($Environment[$d.Ability])$amount$zone."
+    }
+    if ($d.Ability) {
+        $for = if ($dmg) { " for $dmg damage" } else { "" }
+        return "$who was killed by $($d.Ability)$for$zone."
+    }
+    return "$who died$last$zone."
 }
 
 function Send-Death($d) {
@@ -80,13 +101,17 @@ $seen = New-Object 'System.Collections.Generic.HashSet[string]'
 
 Get-Content $log -Wait -Tail 0 -Encoding UTF8 | ForEach-Object {
     if ($_ -notmatch 'FPDEATH;(\d+);(\w+);(.*)$') { return }
-    if ($Matches[1] -ne "1") { Write-Warning "Unknown relay version $($Matches[1]); update this script."; return }
+    # Version 1: name;level;class;zone;killer;ability;time. Version 2 adds damage;killerLevel;subzone.
+    if ($Matches[1] -notin "1", "2") { Write-Warning "Unknown relay version $($Matches[1]); update this script."; return }
     $kind = $Matches[2]
     $f = $Matches[3].Split(';')
     if ($f.Count -lt 7) { return }
     $d = [pscustomobject]@{
         Kind = $kind; Name = $f[0]; Short = ($f[0] -split '-')[0]; Level = $f[1]; Class = $f[2]
         Zone = $f[3]; Killer = $f[4]; Ability = $f[5]; Time = [long]$f[6]
+        Damage = if ($f.Count -gt 7) { $f[7] } else { "" }
+        KillerLevel = if ($f.Count -gt 8) { $f[8] } else { "" }
+        Subzone = if ($f.Count -gt 9) { $f[9] } else { "" }
     }
     if (-not $seen.Add("$($d.Name);$($d.Time);$kind")) { return }
     Send-Death $d

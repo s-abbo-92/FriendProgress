@@ -178,6 +178,8 @@ SlashCmdList.FRIENDPROGRESS = function(input)
     elseif cmd == "deaths" then
         if rest == "test" then
             ns.TestDeath()
+        elseif rest == "debug" then
+            ns.DeathDebug()
         elseif rest == "alerts" then
             local s = ns.db.settings.deaths
             s.alerts = not s.alerts
@@ -209,6 +211,7 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         Print("/fp autosync <minutes> - background sync interval, 0 = off")
         Print("/fp notify - toggle chat notifications for friend activity")
         Print("/fp deaths - death log; /fp deaths alerts - toggle alerts; /fp deaths test - preview")
+        Print("/fp deaths debug - what the combat log showed before your last death")
         Print("/fp discord - toggle the Discord death relay on this character")
         Print("/fp remove Name-Realm - forget a character")
     end
