@@ -582,6 +582,10 @@ local function BuildSettings()
         function() return ns.db.settings.deaths.alerts end,
         function(v) ns.db.settings.deaths.alerts = v end, nil,
         function() end)
+    Check("Jokes in death alerts",
+        function() return ns.db.settings.deaths.jokes end,
+        function(v) ns.db.settings.deaths.jokes = v end, 24,
+        function() end)
     Check("Post my deaths to Discord",
         function() return ns.db.settings.deaths.relay end,
         function(v) ns.db.settings.deaths.relay = v end, nil,

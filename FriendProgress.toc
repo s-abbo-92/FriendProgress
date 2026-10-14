@@ -12,6 +12,7 @@ Serialize.lua
 Collect.lua
 Share.lua
 Comm.lua
+DeathQuips.lua
 Deaths.lua
 Groups.lua
 UI.lua

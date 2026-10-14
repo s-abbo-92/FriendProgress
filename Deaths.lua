@@ -11,11 +11,10 @@ local _, ns = ...
 
 local MAX_LOG = 300
 local LAST_HIT_WINDOW = 15     -- seconds; older hits don't count as the killer
-local RECENT_HITS = 8          -- damage events kept for picking the killing blow
 local RELAY_TAG = "FPDEATH"
 local RELAY_VERSION = 2
 
--- Environmental damage types from the combat log.
+-- How environmental deaths are worded (see FallbackHit for how we detect them).
 local ENVIRONMENT = {
     Falling = "fell to their death",
     Drowning = "drowned",
@@ -77,6 +76,62 @@ function ns.DeathText(d, plain)
     return ("%s died%s%s."):format(who, dmg and (" (last hit " .. dmg .. " damage)") or "", where)
 end
 
+-- A joke for the death, from DeathQuips.lua (generated from the relay's DeathQuips.json;
+-- this follows the same rules as Get-Quip in discord\DeathRelay.ps1).
+local ENV_CATEGORY = { Falling = "falling", Drowning = "drowning", Fatigue = "fatigue",
+    Fire = "fire", Lava = "fire", Slime = "fire" }
+
+function ns.DeathQuip(d, test)
+    local quips = ns.DeathQuips
+    if not quips then return nil end
+    local level, klevel, killer = d.level or 0, d.klevel, d.killer or ""
+    local count = 0
+    for _, e in ipairs(ns.db.deaths) do
+        if e.name == d.name then count = count + 1 end
+    end
+
+    -- Most specific first; the first category with usable lines wins.
+    local cats = {}
+    if test then cats[#cats + 1] = "test" end
+    if ENV_CATEGORY[d.ability or ""] then cats[#cats + 1] = ENV_CATEGORY[d.ability] end
+    if killer ~= "" then
+        local lower = killer:lower()
+        for _, k in ipairs(quips.killers) do
+            local matched = false
+            for _, pattern in ipairs(k[2]) do
+                if lower:find(pattern) then matched = true break end
+            end
+            if matched then cats[#cats + 1] = k[1] break end
+        end
+    end
+    if klevel and klevel < 0 then cats[#cats + 1] = "skull" end
+    if klevel and klevel > 0 and level - klevel >= 4 then cats[#cats + 1] = "outlevelled" end
+    if count >= 3 then cats[#cats + 1] = "veteran" end
+    if level <= 5 then cats[#cats + 1] = "lowlevel" end
+    if level >= 60 then cats[#cats + 1] = "maxlevel" end
+    cats[#cats + 1] = "generic"
+
+    local values = {
+        name = Ambiguate(d.name, "short"), level = level, count = count,
+        killer = killer ~= "" and killer or nil, klevel = klevel,
+        zone = (d.zone or "") ~= "" and d.zone or nil, ability = (d.ability or "") ~= "" and d.ability or nil,
+    }
+    for _, cat in ipairs(cats) do
+        -- Skip lines whose placeholders we can't fill (e.g. {killer} after a fall).
+        local usable = {}
+        for _, line in ipairs(quips.lines[cat] or {}) do
+            local ok = true
+            for key in line:gmatch("{(%w+)}") do
+                if values[key] == nil then ok = false break end
+            end
+            if ok then usable[#usable + 1] = line end
+        end
+        if #usable > 0 then
+            return (usable[math.random(#usable)]:gsub("{(%w+)}", values))
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Log, alerts and relay
 ---------------------------------------------------------------------------
@@ -87,11 +142,18 @@ local function Known(d)
     return false
 end
 
-local function Alert(d)
+local QUIP_COLOR = { r = 0.8, g = 0.8, b = 0.8 }
+
+local function Alert(d, test)
     if not Settings().alerts then return end
     local text = ns.DeathText(d)
     RaidNotice_AddMessage(RaidWarningFrame, text, ChatTypeInfo.RAID_WARNING)
     ns.Print(text)
+    local quip = Settings().jokes and ns.DeathQuip(d, test)
+    if quip then
+        RaidNotice_AddMessage(RaidWarningFrame, quip, QUIP_COLOR)
+        ns.Print("|cffcccccc" .. quip .. "|r")
+    end
     if Settings().sound then PlaySound(SOUNDKIT.RAID_WARNING, "Master") end
 end
 
@@ -127,60 +189,8 @@ local function Record(d)
 end
 
 ---------------------------------------------------------------------------
--- Our own deaths: remember recent hits, pick the killing blow on PLAYER_DEAD
----------------------------------------------------------------------------
-local recent = {}          -- newest last: { killer, guid, ability, amount, overkill, at }
-local lastDeathHits        -- copy of recent at our last death, for /fp deaths debug
-local playerGUID
-local loginTime = math.huge
-
--- "FALLING" or "Falling" -> "Falling"
-local function EnvName(t)
-    t = tostring(t or "")
-    return t:sub(1, 1):upper() .. t:sub(2):lower()
-end
-
--- What the combat log is doing, for /fp deaths debug.
-local diag = { events = 0, toMe = 0 }
-
-local function OnCombatLog(...)
-    diag.events = diag.events + 1
-    -- Older clients pass the fields as event arguments instead.
-    local _, sub, _, srcGUID, srcName, _, _, destGUID, destName, _, _, a12, a13, a14, a15, a16
-    if CombatLogGetCurrentEventInfo then
-        _, sub, _, srcGUID, srcName, _, _, destGUID, destName, _, _, a12, a13, a14, a15, a16 =
-            CombatLogGetCurrentEventInfo()
-    else
-        _, sub, _, srcGUID, srcName, _, _, destGUID, destName, _, _, a12, a13, a14, a15, a16 = ...
-    end
-    diag.last = ("%s: %s -> %s"):format(tostring(sub), tostring(srcName), tostring(destName))
-    if destGUID ~= (playerGUID or UnitGUID("player")) then return end
-    diag.toMe = diag.toMe + 1
-    local hit
-    if sub == "SWING_DAMAGE" then
-        hit = { killer = srcName, guid = srcGUID, ability = "Melee", amount = a12, overkill = a13 }
-    elseif sub == "ENVIRONMENTAL_DAMAGE" then
-        hit = { ability = EnvName(a12), amount = a13, overkill = a14 }
-    elseif sub:find("_DAMAGE$") or sub == "DAMAGE_SHIELD" or sub == "DAMAGE_SPLIT" then
-        -- SPELL_, SPELL_PERIODIC_, RANGE_ ... all share the spell prefix: id, name, school.
-        hit = { killer = srcName, guid = srcGUID, ability = a13, amount = a15, overkill = a16 }
-    elseif sub == "SPELL_INSTAKILL" then
-        hit = { killer = srcName, guid = srcGUID, ability = a13 }
-    end
-    if not hit then return end
-    hit.at = GetTime()
-    recent[#recent + 1] = hit
-    if #recent > RECENT_HITS then table.remove(recent, 1) end
-end
-
--- A failing handler would otherwise stay silent; keep the error for the debug command.
-ns:On("COMBAT_LOG_EVENT_UNFILTERED", function(...)
-    local ok, err = pcall(OnCombatLog, ...)
-    if not ok then diag.err = err end
-end)
-
----------------------------------------------------------------------------
--- Fallback for clients that don't give addons the combat log (WoW Forever):
+-- Our own deaths. WoW Forever doesn't let addons register for the combat log
+-- (COMBAT_LOG_EVENT_UNFILTERED is protected), so the killing blow is pieced together:
 --   UNIT_COMBAT gives each hit's damage and school, but not who did it;
 --   the killer is the hostile unit that was targeting us;
 --   the ability is the killer's spell cast just before the hit, else melee for physical hits;
@@ -189,6 +199,9 @@ end)
 local SCHOOL_PHYSICAL = 1
 local CAST_BEFORE_HIT = 3     -- seconds a spell cast can precede its damage (travel time)
 local ENV_WINDOW = 2          -- seconds before death a fall/drown still counts
+
+local loginTime = math.huge
+local castsSeen = 0           -- for /fp deaths debug
 
 local lastWound      -- { amount, school, at }
 local lastAttacker   -- { name, level, guid, at }
@@ -224,7 +237,7 @@ ns:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
     local guid, name = UnitGUID(unit), spellID and SpellName(spellID)
     if guid and name then
         lastCast[guid] = { name = name, at = GetTime() }
-        diag.casts = (diag.casts or 0) + 1
+        castsSeen = castsSeen + 1
     end
 end)
 
@@ -269,40 +282,14 @@ local function FallbackHit(attacker)
     return hit
 end
 
--- The killer's level, if it's on a unit we can see.
-local function UnitLevelByGUID(guid)
-    if not guid then return nil end
-    local units = { "target", "mouseover", "targettarget", "pettarget" }
-    for i = 1, 4 do units[#units + 1] = "party" .. i .. "target" end
-    for i = 1, 40 do units[#units + 1] = "nameplate" .. i end
-    for _, unit in ipairs(units) do
-        if UnitGUID(unit) == guid then return UnitLevel(unit) end
-    end
-end
-
--- The hit that overkilled us, otherwise the most recent one in the window.
-local function KillingBlow()
-    local now, newest = GetTime(), nil
-    for i = #recent, 1, -1 do
-        local h = recent[i]
-        if now - h.at > LAST_HIT_WINDOW then break end
-        if (tonumber(h.overkill) or 0) > 0 then return h end
-        newest = newest or h
-    end
-    return newest
-end
-
--- attacker: the fallback killer, found the moment we died (mobs drop their target right after).
+-- attacker: the killer, found the moment we died (mobs drop their target right after).
 local function ReportOwnDeath(attacker)
-    local hit = KillingBlow()
-    lastDeathHits = recent
-    recent = {}
-    hit = hit or FallbackHit(attacker)
+    local hit = FallbackHit(attacker)
     local _, class = UnitClass("player")
     local d = {
         name = ns.me, class = class, level = UnitLevel("player"),
         zone = GetRealZoneText() or "", subzone = GetSubZoneText() or "",
-        killer = hit.killer or "", klevel = hit.level or UnitLevelByGUID(hit.guid),
+        killer = hit.killer or "", klevel = hit.level,
         ability = hit.ability or "", damage = tonumber(hit.amount),
         t = GetServerTime(),
     }
@@ -320,12 +307,11 @@ ns:On("PLAYER_DEAD", function()
     -- Logging in while dead can fire this too; that death was already reported.
     if not ns.me or GetTime() - loginTime < 5 then return end
     local attacker = FindAttacker() or Fresh(lastAttacker)
-    -- The killing blow can reach the combat log just after this event.
+    -- Give the killing hit's UNIT_COMBAT and the falling/breath ticker a moment to catch up.
     C_Timer.After(0.5, function() ReportOwnDeath(attacker) end)
 end)
 
 ns:Listen("LOGIN", function()
-    playerGUID = UnitGUID("player")
     loginTime = GetTime()
 end)
 
@@ -371,7 +357,7 @@ function ns.TestDeath()
     }
     local alerts = Settings().alerts
     Settings().alerts = true
-    Alert(d)
+    Alert(d, true)
     Settings().alerts = alerts
     if Settings().relay then
         Relay(d, true)
@@ -379,27 +365,15 @@ function ns.TestDeath()
     end
 end
 
--- What the combat log showed before our last death (or since, if we haven't died).
+-- What death detection has seen, for when a death comes out wrong.
 function ns.DeathDebug()
     local now = GetTime()
-    ns.Print(("Combat log: %d events this session, %d hit you."):format(diag.events, diag.toMe))
-    if diag.last then ns.Print("  last event: " .. diag.last) end
-    if diag.err then ns.Print("  error: " .. tostring(diag.err)) end
-    ns.Print("  your GUID: " .. tostring(playerGUID or UnitGUID("player")))
-    ns.Print(("Fallback: last hit %s, attacker %s, enemy spell casts seen: %d."):format(
-        lastWound and ("%s dmg (school %s) %ds ago"):format(tostring(lastWound.amount),
-            tostring(lastWound.school), now - lastWound.at) or "none",
-        lastAttacker and ("%s (level %s)"):format(tostring(lastAttacker.name), tostring(lastAttacker.level))
-            or "none", diag.casts or 0))
-
-    local hits = lastDeathHits or recent
-    ns.Print(lastDeathHits and "Damage taken before your last death:" or "Damage taken recently (no death yet):")
-    if #hits == 0 then
-        ns.Print("  none captured from the combat log.")
-        return
-    end
-    for _, h in ipairs(hits) do
-        ns.Print(("  %.1fs ago: %s / %s / %s dmg / %s overkill"):format(now - h.at,
-            tostring(h.killer), tostring(h.ability), tostring(h.amount), tostring(h.overkill)))
-    end
+    ns.Print("Death detection (what a death right now would be based on):")
+    ns.Print("  last hit taken: " .. (lastWound and ("%s dmg (school %s) %ds ago"):format(
+        tostring(lastWound.amount), tostring(lastWound.school), now - lastWound.at) or "none"))
+    ns.Print("  last attacker: " .. (lastAttacker and ("%s (level %s) %ds ago"):format(
+        tostring(lastAttacker.name), tostring(lastAttacker.level), now - lastAttacker.at) or "none"))
+    ns.Print(("  enemy spell casts seen: %d; last fall %s; last drown/fatigue %s"):format(castsSeen,
+        lastFall > 0 and ("%ds ago"):format(now - lastFall) or "never",
+        lastEnv and ("%s %ds ago"):format(lastEnv.ability, now - lastEnv.at) or "never"))
 end

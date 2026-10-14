@@ -33,8 +33,9 @@ addon messages through your guild, your group and your in-game friends list.
 | `/fp notify` | Chat notifications for friends' activity |
 | `/fp deaths` | Death log |
 | `/fp deaths alerts` | On-screen death alerts on or off |
+| `/fp deaths jokes` | Jokes in death alerts on or off |
 | `/fp deaths test` | Preview a death alert (and test the Discord relay) |
-| `/fp deaths debug` | Show the damage the addon saw before your last death |
+| `/fp deaths debug` | Show what death detection has seen (last hit, attacker, falls) |
 | `/fp discord` | Post your deaths to Discord on or off (needs the relay, see below) |
 | `/fp remove Name-Realm` | Forget a character |
 
@@ -63,11 +64,19 @@ and the post goes out right after. If you're resurrected instead, it posts at yo
 Run `Install.cmd` again to change the webhook or after updating the addon. `Uninstall.cmd` removes
 the relay. If nothing posts, look at `%LOCALAPPDATA%\FriendProgress\relay.log`.
 
-Each post gets a joke picked to match the death: falls, drowning, murlocs, Hogger, getting killed
-by something far below your level, your tenth death, and so on. They're all in
-`discord\DeathQuips.json`. Add your own lines there (and send them in so everyone gets them).
-`_killers` maps patterns in the killer's name to a category. To turn jokes off, add
-`"humour": false` to `%LOCALAPPDATA%\FriendProgress\DeathRelay.config.json`.
+### Jokes
+
+Death alerts in game and Discord posts each get a joke picked to match the death: falls,
+drowning, murlocs, Hogger, getting killed by something far below your level, your tenth death,
+and so on. Turn them off in game with `/fp deaths jokes` (or in **Sharing...**), and in Discord
+by adding `"humour": false` to `%LOCALAPPDATA%\FriendProgress\DeathRelay.config.json`.
+
+The jokes live in `discord\DeathQuips.json`. `_killers` maps patterns in the killer's name to a
+category. After editing it, run the line below to update the in-game copy (`DeathQuips.lua`),
+then send the changes in so everyone gets them:
+```
+powershell -ExecutionPolicy Bypass -File tools\Build-Quips.ps1
+```
 
 ## Good to know
 

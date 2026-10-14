@@ -1,5 +1,5 @@
 {
-    "_help": "One line is picked at random per death, from the most specific category that matches (see Get-Quip in DeathRelay.ps1). Placeholders: {name} {level} {killer} {klevel} {zone} {ability} {count}. Lines whose placeholders can't be filled (e.g. {killer} after a fall) are skipped. _killers maps a pattern on the killer's name (a regex, case-insensitive) to a category; the first match wins. Edit freely.",
+    "_help": "One line is picked at random per death, from the most specific category that matches (see Get-Quip in DeathRelay.ps1). Placeholders: {name} {level} {killer} {klevel} {zone} {ability} {count}. Lines whose placeholders can't be filled (e.g. {killer} after a fall) are skipped. _killers maps patterns on the killer's name to a category; the first match wins. Patterns are case-insensitive words separated by |, optionally wrapped in ^(...)$ to match the whole name, with \\b for a word edge and a space followed by ? for an optional space (the in-game copy only supports these). After editing, run tools\\Build-Quips.ps1 to update the in-game copy.",
 
     "_killers": {
         "^Hogger$": "hogger",
@@ -12,19 +12,19 @@
         "spider|widow|recluse|tarantula|creeper|venomweb": "spider",
         "boar|quilboar|bristleback|razormane|death's head": "boar",
         "wolf|worg|coyote|jackal|hyena": "wolf",
-        "bear|grizzly|ursa": "bear",
+        "\\bbear\\b|grizzly|\\bursa": "bear",
         "raptor|ravasaur|scythemaw|sunscale|bloodtalon|takk|thunder lizard|basilisk": "raptor",
         "harpy|windfury|bloodfeather|witchwing": "harpy",
         "ogre|mauler|brute": "ogre",
         "troll|darkspear|skullsplitter|bloodscalp|witherbark|vilebranch|zandalari": "troll",
         "naga|siren|myrmidon|slitherblade": "naga",
         "centaur|kolkar|galak|maraudine|magram|gelkis": "centaur",
-        "skelet|zombie|ghoul|ghost|wraith|banshee|lich|scourge|undead|cultist|necromancer|abomination": "undead",
+        "skelet|zombie|ghoul|ghost|wraith|banshee|\\blich\\b|scourge|undead|cultist|necromancer|abomination": "undead",
         "dragon|drake|whelp|dragonkin|wyrm": "dragon",
         "elemental|fury|rager|living flame|tempest|rock elemental": "elemental",
         "kodo|plainstrider|zhevra|crocolisk|crawler|scorpid|makrura": "beast",
         "guard|sentinel|grunt|footman|marshal|deathguard|watcher": "guard",
-        "chicken|rabbit|squirrel|deer|sheep|toad|frog|rat|cow|prairie dog|hare": "critter"
+        "chicken|rabbit|squirrel|\\bdeer\\b|sheep|\\btoad\\b|\\bfrog\\b|\\brat\\b|\\bcow\\b|prairie dog|\\bhare\\b": "critter"
     },
 
     "test": [

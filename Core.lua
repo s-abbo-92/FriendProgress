@@ -31,6 +31,7 @@ local DEFAULTS = {
         deaths = {
             alerts = true,  -- raid-warning style alert when a friend dies
             sound = true,
+            jokes = true,   -- a joke line under each alert (DeathQuips.lua)
             relay = false,  -- queue our deaths for the Discord relay; reload on release spirit
         },
         autoSync = 10,      -- minutes between background syncs; 0 = off
@@ -186,6 +187,11 @@ SlashCmdList.FRIENDPROGRESS = function(input)
             s.alerts = not s.alerts
             if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
             Print("Death alerts " .. (s.alerts and "on" or "off") .. ".")
+        elseif rest == "jokes" then
+            local s = ns.db.settings.deaths
+            s.jokes = not s.jokes
+            if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
+            Print("Jokes in death alerts " .. (s.jokes and "on" or "off") .. ".")
         else
             ns.ShowTab("deaths")
         end
@@ -211,8 +217,8 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         Print("/fp unlock, /fp lock - move the on-screen frames")
         Print("/fp autosync <minutes> - background sync interval, 0 = off")
         Print("/fp notify - toggle chat notifications for friend activity")
-        Print("/fp deaths - death log; /fp deaths alerts - toggle alerts; /fp deaths test - preview")
-        Print("/fp deaths debug - what the combat log showed before your last death")
+        Print("/fp deaths - death log; /fp deaths alerts, /fp deaths jokes - toggle alerts or jokes; /fp deaths test - preview")
+        Print("/fp deaths debug - what death detection has seen (last hit, attacker, falls)")
         Print("/fp discord - post your deaths to Discord (needs the relay installed)")
         Print("/fp remove Name-Realm - forget a character")
     end
