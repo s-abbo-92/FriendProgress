@@ -22,7 +22,7 @@ local SLOT_NAMES = {
     [16] = "Main Hand", [17] = "Off Hand", [18] = "Ranged", [19] = "Tabard",
 }
 
-local WIDTH, HEIGHT = 840, 480
+local WIDTH, HEIGHT = 840, 520   -- minimum size; widens if the tab labels need it
 local LIST_W = 190
 local RIGHT_X = 236   -- left edge of tabs / body / settings
 
@@ -414,7 +414,7 @@ end
 
 local function BuildSettings()
     local panel = CreateFrame("Frame", nil, frame)
-    panel:SetPoint("TOPLEFT", RIGHT_X, -32)
+    panel:SetPoint("TOPLEFT", RIGHT_X, -62)   -- below the tab row
     panel:SetPoint("BOTTOMRIGHT", -12, 40)
     panel:Hide()
     frame.settingsPanel = panel
@@ -604,11 +604,15 @@ local function Build()
     frame.emptyList:SetJustifyH("LEFT")
     frame.emptyList:SetText("Nobody here yet. Right-click a character in \"Everyone\" to add them to a group.")
 
-    for i, t in ipairs(TABS) do
+    -- Tabs size to their labels, which UI skins with larger fonts can make wider.
+    local tabX = RIGHT_X
+    for _, t in ipairs(TABS) do
         local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        b:SetSize(82, 22)
-        b:SetPoint("TOPLEFT", RIGHT_X + (i - 1) * 84, -30)
         b:SetText(t[2])
+        local w = math.max(70, math.ceil(b:GetFontString():GetStringWidth()) + 24)
+        b:SetSize(w, 22)
+        b:SetPoint("TOPLEFT", tabX, -30)
+        tabX = tabX + w + 3
         b:SetScript("OnClick", function()
             tab = t[1]
             showSettings = false
@@ -628,7 +632,9 @@ local function Build()
 
     local bodyScroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
     frame.bodyScroll = bodyScroll
-    local bodyW = WIDTH - RIGHT_X - 32
+    local frameW = math.max(WIDTH, tabX + 9)
+    frame:SetWidth(frameW)
+    local bodyW = frameW - RIGHT_X - 32
     body = CreateFrame("Frame", nil, bodyScroll)
     body:SetSize(bodyW, 1)
     bodyScroll:SetScrollChild(body)
