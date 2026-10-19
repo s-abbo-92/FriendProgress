@@ -24,22 +24,38 @@ local ticker
 
 local THROTTLED = Enum.SendAddonMessageResult and Enum.SendAddonMessageResult.AddonMessageThrottle
 
+local PRIORITY_BURST = 5   -- priority messages (deaths, live XP) sent per tick instead of one
+
 local function Pump()
-    local msg = queue[1]
-    if not msg then
-        ticker:Cancel()
-        ticker = nil
-        return
+    local sent = 0
+    while queue[1] do
+        local msg = queue[1]
+        local result = C_ChatInfo.SendAddonMessage(PREFIX, msg[1], msg[2], msg[3])
+        if THROTTLED and result == THROTTLED then return end   -- retry next tick
+        table.remove(queue, 1)
+        sent = sent + 1
+        if not msg[4] or sent >= PRIORITY_BURST then return end
     end
-    local result = C_ChatInfo.SendAddonMessage(PREFIX, msg[1], msg[2], msg[3])
-    if THROTTLED and result == THROTTLED then return end   -- retry next tick
-    table.remove(queue, 1)
+    ticker:Cancel()
+    ticker = nil
 end
 
-local function Send(text, channel, target)
-    queue[#queue + 1] = { text, channel, target }
+-- priority messages jump ahead of bulk section data (but stay in order among themselves).
+local function Send(text, channel, target, priority)
+    local entry = { text, channel, target, priority }
+    if priority then
+        local at = #queue + 1
+        for i, m in ipairs(queue) do
+            if not m[4] then at = i break end
+        end
+        table.insert(queue, at, entry)
+    else
+        queue[#queue + 1] = entry
+    end
     if not ticker then ticker = C_Timer.NewTicker(SEND_INTERVAL, Pump) end
 end
+
+function ns.SendQueueEmpty() return #queue == 0 end
 
 ---------------------------------------------------------------------------
 -- Who to talk to: guild, current group, and online WoW friends
@@ -94,11 +110,11 @@ end
 
 -- Send to everyone we can reach. Friends who are also in our guild or group get
 -- it more than once, so receivers of one-off messages must dedupe.
-function ns.Broadcast(text)
-    if IsInGuild() then Send(text, "GUILD") end
+function ns.Broadcast(text, priority)
+    if IsInGuild() then Send(text, "GUILD", nil, priority) end
     local group = GroupChannel()
-    if group then Send(text, group) end
-    for _, name in ipairs(OnlineFriends()) do Send(text, "WHISPER", name) end
+    if group then Send(text, group, nil, priority) end
+    for _, name in ipairs(OnlineFriends()) do Send(text, "WHISPER", name, priority) end
 end
 
 -- Manual sync (window button, on-screen button, /fp sync). Returns false while cooling down.
@@ -249,7 +265,7 @@ function ns.SendLiveXP()
     end
     lastXPSend = GetTime()
     Send(("X|%d|%d|%d|%d"):format(UnitLevel("player"), UnitXP("player"), UnitXPMax("player"),
-        math.floor(GetXPExhaustion() or 0)), group)
+        math.floor(GetXPExhaustion() or 0)), group, nil, true)
 end
 
 function ns.SetLiveXPSharing(enabled)
@@ -257,7 +273,7 @@ function ns.SetLiveXPSharing(enabled)
         ns.SendLiveXP()
     else
         local group = GroupChannel()
-        if group then Send("X|off", group) end
+        if group then Send("X|off", group, nil, true) end
     end
 end
 

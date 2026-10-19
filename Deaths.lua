@@ -161,6 +161,7 @@ end
 -- /reload, logout or exit. So after a death we reload when you release spirit.
 local RELAY_QUEUE_MAX = 20
 local unsaved = false   -- a death was queued since the saved variables were last written
+local reportPending = false   -- we died and the report (0.5s later) hasn't been built yet
 
 local function Relay(d, test)
     if not Settings().relay or not ns.me then return end
@@ -175,9 +176,25 @@ local function Relay(d, test)
     unsaved = true
 end
 
+-- A reload empties the outgoing message queue, so wait until the death has been
+-- reported and sent to friends first (at most ~10s). When nothing is waiting this
+-- reloads at once, inside the click that triggered it.
+local function ReloadWhenSent()
+    local tries = 0
+    local function Check()
+        tries = tries + 1
+        if (reportPending or not ns.SendQueueEmpty()) and tries <= 50 then
+            C_Timer.After(0.2, Check)
+            return
+        end
+        ReloadUI()
+    end
+    Check()
+end
+
 -- Release Spirit is a click, so reloading from it is allowed.
 hooksecurefunc("RepopMe", function()
-    if unsaved and Settings().relay then ReloadUI() end
+    if (unsaved or reportPending) and Settings().relay then ReloadWhenSent() end
 end)
 
 local function Record(d)
@@ -299,14 +316,16 @@ local function ReportOwnDeath(attacker)
         ns.Broadcast(table.concat({
             "K", d.t, d.level, Clean(d.class), Clean(d.zone), Clean(d.killer), Clean(d.ability),
             d.damage or "", d.klevel or "", Clean(d.subzone),
-        }, "|"))
+        }, "|"), true)
     end
+    reportPending = false
 end
 
 ns:On("PLAYER_DEAD", function()
     -- Logging in while dead can fire this too; that death was already reported.
     if not ns.me or GetTime() - loginTime < 5 then return end
     local attacker = FindAttacker() or Fresh(lastAttacker)
+    reportPending = true
     -- Give the killing hit's UNIT_COMBAT and the falling/breath ticker a moment to catch up.
     C_Timer.After(0.5, function() ReportOwnDeath(attacker) end)
 end)
@@ -362,7 +381,7 @@ function ns.TestDeath()
     Settings().alerts = alerts
     if Settings().relay then
         Relay(d, true)
-        ReloadUI()
+        ReloadWhenSent()
     end
 end
 
