@@ -177,18 +177,31 @@ local function SameList(a, b)
     return true
 end
 
+local RESOLVE_PER_PASS = 80   -- uncached recipe outputs looked up per pass, so opening a big profession doesn't hitch
+local QueueCapture            -- defined with the events below
+
 local function CaptureRecipes()
     if not ns.me or not OwnTradeSkillShown() then return end
     local base = C_TradeSkillUI.GetBaseProfessionInfo()
     local profName = base and base.professionName
     if not profName or profName == "" then return end
-    local list, count = {}, 0
+    local list, count, budget, incomplete = {}, 0, RESOLVE_PER_PASS, false
     for _, recipeID in ipairs(C_TradeSkillUI.GetAllRecipeIDs() or {}) do
         local info = C_TradeSkillUI.GetRecipeInfo(recipeID)
         if info and info.learned then
-            list[recipeID] = OutputItem(recipeID)
-            count = count + 1
+            if outputCache[recipeID] or budget > 0 then
+                if not outputCache[recipeID] then budget = budget - 1 end
+                list[recipeID] = OutputItem(recipeID)
+                count = count + 1
+            else
+                incomplete = true
+                break
+            end
         end
+    end
+    if incomplete then
+        QueueCapture(0.1)   -- continue in the next pass; the cache keeps what's done
+        return
     end
     if count == 0 then return end   -- list not loaded yet; TRADE_SKILL_LIST_UPDATE will follow
     local c = Me()
@@ -279,7 +292,7 @@ local function Flush()
         ns:Fire("DATA_UPDATED", ns.me, "own")
         -- Only announce when the filtered (shared) view changed, e.g. hidden
         -- bag items moving around don't trigger a sync.
-        if ns.UpdateSharedHashes() then ns:Fire("SELF_CHANGED") end
+        if ns.UpdateSharedHashes(todo) then ns:Fire("SELF_CHANGED") end
     end
 end
 
@@ -340,23 +353,24 @@ ns:On("SKILL_LINES_CHANGED", function()
     ns.MarkDirty("recipes")
 end)
 
--- TRADE_SKILL_LIST_UPDATE can fire in bursts; capture at most twice a second.
+-- TRADE_SKILL_LIST_UPDATE fires on every craft and search keystroke, so it only
+-- schedules a capture a few seconds out; opening the window captures quickly.
 local capturePending = false
-local function QueueCapture()
+QueueCapture = function(delay)
     if capturePending then return end
     capturePending = true
-    C_Timer.After(0.5, function()
+    C_Timer.After(delay or 0.5, function()
         capturePending = false
         CaptureRecipes()
     end)
 end
-ns:On("TRADE_SKILL_SHOW", QueueCapture)
-ns:On("TRADE_SKILL_LIST_UPDATE", QueueCapture)
-ns:On("TRADE_SKILL_DATA_SOURCE_CHANGED", QueueCapture)
+ns:On("TRADE_SKILL_SHOW", function() QueueCapture(0.5) end)
+ns:On("TRADE_SKILL_LIST_UPDATE", function() QueueCapture(3) end)
+ns:On("TRADE_SKILL_DATA_SOURCE_CHANGED", function() QueueCapture(3) end)
 ns:On("NEW_RECIPE_LEARNED", function(recipeID)
     local name = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(recipeID)
     if name then AddLog("Learned recipe: " .. name, "prof") end
-    QueueCapture()   -- picks it up if the profession window is open
+    QueueCapture(0.5)   -- picks it up if the profession window is open
 end)
 ns:On("QUEST_LOG_UPDATE", Dirty("quest"))
 

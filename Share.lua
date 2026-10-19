@@ -95,11 +95,12 @@ end
 
 -- Recomputes the hashes friends see. "-" means "withheld: delete your copy".
 -- Returns true if anything a friend would see has changed.
-function ns.UpdateSharedHashes()
+-- sections: optional list of the sections that were rescanned; the rest can't have changed.
+function ns.UpdateSharedHashes(sections)
     local c = ns.GetChar(ns.me)
     c.sharedHashes = c.sharedHashes or {}
     local changed = false
-    for _, section in ipairs(ns.SECTIONS) do
+    for _, section in ipairs(sections or ns.SECTIONS) do
         local hash
         if c.sections[section] ~= nil then
             local data = ns.SharedSection(section)

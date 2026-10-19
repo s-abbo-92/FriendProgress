@@ -30,6 +30,7 @@ local RIGHT_X = 236   -- left edge of tabs / body / settings
 local frame, bodyText, body
 local listButtons, tabButtons = {}, {}
 local selected, tab = nil, "overview"
+local menuStale = true   -- the group dropdown only needs regenerating when groups or the selection change
 local showSettings = false
 
 ---------------------------------------------------------------------------
@@ -242,6 +243,7 @@ end
 
 -- "Who can craft X?" across every character in the current list.
 local MAX_RESULTS = 100
+local lowerSpell, lowerItem = {}, {}   -- lowercased names, so a keystroke doesn't redo them for every recipe
 local function RenderSearch(query, keys)
     local q = query:lower()
     local found, list = {}, {}
@@ -253,7 +255,14 @@ local function RenderSearch(query, keys)
             for recipeID, itemID in pairs(r.list or {}) do
                 local spell = SpellName(recipeID) or ""
                 local item = itemID > 0 and GetItemInfo(itemID) or nil
-                if spell:lower():find(q, 1, true) or (item and item:lower():find(q, 1, true)) then
+                local spellLower = lowerSpell[recipeID]
+                if not spellLower then
+                    spellLower = spell:lower()
+                    if spell ~= "" then lowerSpell[recipeID] = spellLower end
+                end
+                local itemLower = item and (lowerItem[itemID] or item:lower())
+                if itemLower then lowerItem[itemID] = itemLower end
+                if spellLower:find(q, 1, true) or (itemLower and itemLower:find(q, 1, true)) then
                     local e = found[recipeID]
                     if not e then
                         e = { id = recipeID, item = itemID, name = item or spell, who = {} }
@@ -656,7 +665,15 @@ local function Build()
     search:SetPoint("TOPLEFT", RIGHT_X + 8, -60)
     search:SetAutoFocus(false)
     if search.Instructions then search.Instructions:SetText("Who can craft...?") end
-    search:HookScript("OnTextChanged", function() ns.RefreshUI() end)
+    -- Wait for a pause in typing; each redraw scans every friend's recipes.
+    local searchToken = 0
+    search:HookScript("OnTextChanged", function()
+        searchToken = searchToken + 1
+        local token = searchToken
+        C_Timer.After(0.2, function()
+            if token == searchToken then ns.RefreshUI() end
+        end)
+    end)
     frame.search = search
 
     local bodyScroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
@@ -735,7 +752,10 @@ end
 
 function ns.RefreshUI()
     if not frame or not frame:IsShown() then return end
-    frame.groupDropdown:GenerateMenu()   -- updates the dropdown's label
+    if menuStale then
+        menuStale = false
+        frame.groupDropdown:GenerateMenu()   -- updates the dropdown's label
+    end
 
     local keys = SortedKeys()
     if not selected or not Contains(keys, selected) then selected = keys[1] end
@@ -817,5 +837,8 @@ local function QueueRefresh()
 end
 
 ns:Listen("DATA_UPDATED", QueueRefresh)
-ns:Listen("GROUPS_CHANGED", QueueRefresh)
+ns:Listen("GROUPS_CHANGED", function()
+    menuStale = true
+    QueueRefresh()
+end)
 ns:On("GET_ITEM_INFO_RECEIVED", QueueRefresh)
