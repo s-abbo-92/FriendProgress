@@ -289,6 +289,7 @@ function ns.MarkDirty(section)
 end
 
 function ns.CollectAll()
+    skipScan = {}   -- a full collect rescans everything
     for _, s in ipairs(ns.SECTIONS) do dirty[s] = true end
     Flush()
 end
