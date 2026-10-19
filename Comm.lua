@@ -66,6 +66,15 @@ local function GroupChannel()
     if IsInGroup() then return "PARTY" end
 end
 
+-- Syncing into a raid or battleground would hand your data to strangers and bury
+-- everyone in traffic, so group traffic only goes to groups of party size.
+local MAX_SYNC_GROUP = 5
+
+local function SyncGroupChannel()
+    if GetNumGroupMembers() > MAX_SYNC_GROUP then return nil end
+    return GroupChannel()
+end
+
 local function OnlineFriends()
     local list = {}
     for i = 1, C_FriendList.GetNumFriends() do
@@ -112,7 +121,7 @@ end
 -- it more than once, so receivers of one-off messages must dedupe.
 function ns.Broadcast(text, priority)
     if IsInGuild() then Send(text, "GUILD", nil, priority) end
-    local group = GroupChannel()
+    local group = SyncGroupChannel()
     if group then Send(text, group, nil, priority) end
     for _, name in ipairs(OnlineFriends()) do Send(text, "WHISPER", name, priority) end
 end
@@ -195,7 +204,7 @@ local function OnSection(sender, payload)
     c.hashes[section] = hash
     requested[sender .. ":" .. section] = nil
     c.lastSeen = GetServerTime()
-    ns:Fire("DATA_UPDATED")
+    ns:Fire("DATA_UPDATED", sender, section)
 end
 
 local handlers = {}
@@ -208,13 +217,14 @@ handlers.H = function(sender, rest)
     if not proto or tonumber(proto) ~= ns.PROTOCOL then return end
     local c = ns.GetChar(sender)
     c.lastSeen = GetServerTime()
-    local need = {}
+    local need, dropped = {}, nil
     for section, hash in list:gmatch("(%w+)=([%x%-]+)") do
         if not ns.IsSection(section) then
             -- ignore names we don't know
         elseif hash == "-" then
             -- They stopped sharing this section: forget our copy.
             c.sections[section], c.hashes[section] = nil, nil
+            dropped = section
         elseif c.hashes[section] ~= hash and not Recent(requested, sender .. ":" .. section, hash) then
             requested[sender .. ":" .. section] = { hash, GetTime() }
             need[#need + 1] = section
@@ -225,7 +235,7 @@ handlers.H = function(sender, rest)
         lastReply[sender] = GetTime()
         Send(HelloText(false), "WHISPER", sender)
     end
-    ns:Fire("DATA_UPDATED")
+    ns:Fire("DATA_UPDATED", sender, dropped or "hello")
 end
 
 handlers.Q = function(sender, rest)
@@ -271,7 +281,7 @@ ns.liveXP = {}   -- [ "Name-Realm" ] = { level, xp, xpMax, rested }
 local lastXPSend, xpPending = 0, false
 function ns.SendLiveXP()
     if not ns.me or not ns.db.settings.share.liveXP then return end
-    local group = GroupChannel()
+    local group = SyncGroupChannel()
     if not group then return end
     local wait = LIVE_XP_INTERVAL - (GetTime() - lastXPSend)
     if wait > 0 then
@@ -293,7 +303,7 @@ function ns.SetLiveXPSharing(enabled)
     if enabled then
         ns.SendLiveXP()
     else
-        local group = GroupChannel()
+        local group = SyncGroupChannel()
         if group then Send("X|off", group, nil, true) end
     end
 end
@@ -388,6 +398,6 @@ ns:On("FRIENDLIST_UPDATE", function()
 end)
 
 ns:On("GROUP_JOINED", function()
-    local group = GroupChannel()
+    local group = SyncGroupChannel()
     if group and ns.me then Send(HelloText(true), group) end
 end)

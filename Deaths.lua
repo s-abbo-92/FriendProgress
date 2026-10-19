@@ -201,7 +201,7 @@ local function Record(d)
     if Known(d) then return false end
     table.insert(ns.db.deaths, 1, d)
     for i = #ns.db.deaths, MAX_LOG + 1, -1 do ns.db.deaths[i] = nil end
-    ns:Fire("DATA_UPDATED")
+    ns:Fire("DATA_UPDATED", d.name, "deaths")
     return true
 end
 
@@ -237,11 +237,11 @@ local function FindAttacker()
     end
 end
 
-ns:On("UNIT_COMBAT", function(unit, action, _, amount, school)
+ns:OnUnit("UNIT_COMBAT", function(unit, action, _, amount, school)
     if unit ~= "player" or action ~= "WOUND" then return end
     lastWound = { amount = tonumber(amount), school = tonumber(school), at = GetTime() }
     lastAttacker = FindAttacker() or lastAttacker
-end)
+end, "player")
 
 local function SpellName(id)
     if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(id) end
@@ -249,14 +249,15 @@ local function SpellName(id)
 end
 
 -- Fires once per unit token showing the caster (target, nameplate3, ...); same result each time.
-ns:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
+-- Only the units an attacker could be found on, not every party and raid member.
+ns:OnUnit("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
     if unit == "player" or not UnitCanAttack("player", unit) then return end
     local guid, name = UnitGUID(unit), spellID and SpellName(spellID)
     if guid and name then
         lastCast[guid] = { name = name, at = GetTime() }
         castsSeen = castsSeen + 1
     end
-end)
+end, unpack(ATTACKER_UNITS))
 
 -- Leaving combat: forget old casts so the table doesn't grow all session.
 ns:On("PLAYER_REGEN_ENABLED", function() lastCast = {} end)

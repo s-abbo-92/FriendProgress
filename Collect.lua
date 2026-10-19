@@ -276,7 +276,7 @@ local function Flush()
     end
     c.lastSeen = GetServerTime()
     if changed then
-        ns:Fire("DATA_UPDATED")
+        ns:Fire("DATA_UPDATED", ns.me, "own")
         -- Only announce when the filtered (shared) view changed, e.g. hidden
         -- bag items moving around don't trigger a sync.
         if ns.UpdateSharedHashes() then ns:Fire("SELF_CHANGED") end

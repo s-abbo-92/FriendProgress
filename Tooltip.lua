@@ -40,8 +40,15 @@ local function Build()
 end
 
 local function Invalidate() index = nil end
-ns:Listen("DATA_UPDATED", Invalidate)
 ns.InvalidateTooltipIndex = Invalidate
+
+-- DATA_UPDATED(key, section): only changes to others' bags, bank or recipes matter here.
+-- No arguments (e.g. a character was forgotten) or an unknown section rebuilds, to be safe.
+local IRRELEVANT = { own = true, hello = true, deaths = true, char = true, gear = true, prof = true, quest = true, log = true }
+ns:Listen("DATA_UPDATED", function(key, section)
+    if key == ns.me or (section and IRRELEVANT[section]) then return end
+    Invalidate()
+end)
 
 local function DisplayName(key)
     local c = ns.db.chars[key]

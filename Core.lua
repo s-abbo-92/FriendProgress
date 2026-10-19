@@ -70,6 +70,18 @@ frame:SetScript("OnEvent", function(_, event, ...)
     for _, fn in ipairs(handlers[event]) do fn(...) end
 end)
 
+-- Like ns:On, but only for the given units (e.g. "player", "party1"), so the game
+-- doesn't call us for every nameplate. One frame per two units keeps it safe on
+-- clients that only accept two units per registration.
+function ns:OnUnit(event, fn, ...)
+    local units = { ... }
+    for i = 1, #units, 2 do
+        local f = CreateFrame("Frame")
+        f:RegisterUnitEvent(event, units[i], units[i + 1])
+        f:SetScript("OnEvent", function(_, _, ...) fn(...) end)
+    end
+end
+
 -- Tiny callback bus for internal messages (e.g. "DATA_UPDATED").
 local callbacks = {}
 function ns:Listen(msg, fn)
