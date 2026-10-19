@@ -8,13 +8,21 @@ addon messages through your guild, your group and your in-game friends list.
 
 ## Install
 
-1. Get `FriendProgress-<version>.zip` from whoever shares it with you.
-2. Extract it into `World of Warcraft\_classic_beta_\Interface\AddOns\`. You should end up with
-   `AddOns\FriendProgress\FriendProgress.toc`. To update, delete the old `FriendProgress` folder first.
-3. Restart the game or type `/reload`.
-4. Optional: to post your deaths to Discord, see [Posting your deaths to Discord](#posting-your-deaths-to-discord).
+1. Download `FriendProgress-<version>.zip` (from whoever shares it with you, or the repository's
+   Releases page if it has one).
+2. Close WoW, then extract the zip into `World of Warcraft\_classic_beta_\Interface\AddOns\`
+   (usually `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\`).
+   You should end up with `AddOns\FriendProgress\FriendProgress.toc` and not an extra folder level.
+   To update, delete the old `FriendProgress` folder first.
+3. Start the game. If FriendProgress shows as out of date on the character select screen,
+   tick **Load out of date AddOns**.
+4. Type `/fp` in game to open it. Type `/fp sync` once your friends have it installed too.
+5. Optional: to post your deaths to Discord, see [Posting your deaths to Discord](#posting-your-deaths-to-discord).
 
-Everyone you sync with should be on the same version; deaths from older versions don't show up.
+The `discord` folder inside the addon is only used by the optional Discord relay (Windows only).
+WoW ignores it, so leave it where it is.
+
+Everyone you sync with should be on the same version; older versions ignore some newer data.
 
 ## Using it
 
