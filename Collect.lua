@@ -246,6 +246,7 @@ end
 -- Dirty tracking: events mark sections dirty, a short timer rescans them.
 ---------------------------------------------------------------------------
 local dirty, timer = {}, nil
+local skipScan = {}   -- sections whose data was already updated in place (e.g. money), so no rescan
 
 local function Flush()
     timer = nil
@@ -256,8 +257,10 @@ local function Flush()
     local todo = {}
     for section in pairs(dirty) do todo[#todo + 1] = section end
     wipe(dirty)
+    local skip = skipScan
+    skipScan = {}
     for _, section in ipairs(todo) do
-        if scanners[section] then
+        if scanners[section] and not skip[section] then
             local ok, data = pcall(scanners[section])
             if ok and data then
                 c.sections[section] = data
@@ -312,6 +315,7 @@ ns:On("PLAYER_EQUIPMENT_CHANGED", function(slot)
     if quality and quality >= 3 then AddLog("Equipped " .. link, "gear") end
 end)
 ns:On("BAG_UPDATE_DELAYED", function()
+    skipScan.bags = nil   -- contents changed: a full scan is needed after all
     ns.MarkDirty("bags")
     if bankOpen then ns.MarkDirty("bank") end
 end)
@@ -321,7 +325,15 @@ ns:On("BANKFRAME_OPENED", function()
 end)
 ns:On("BANKFRAME_CLOSED", function() bankOpen = false end)
 ns:On("PLAYERBANKSLOTS_CHANGED", function() if bankOpen then ns.MarkDirty("bank") end end)
-ns:On("PLAYER_MONEY", Dirty("bags"))
+-- Looting coin shouldn't rescan every bag slot: just update the stored amount.
+ns:On("PLAYER_MONEY", function()
+    local bags = ns.me and Me().sections.bags
+    if bags and not dirty.bags then
+        bags.money = GetMoney()
+        skipScan.bags = true
+    end
+    ns.MarkDirty("bags")
+end)
 ns:On("SKILL_LINES_CHANGED", function()
     ns.MarkDirty("prof")
     ns.MarkDirty("recipes")

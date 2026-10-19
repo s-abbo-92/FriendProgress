@@ -17,11 +17,28 @@ end
 -- Each filter returns the data to send, or nil to withhold the section.
 local filters = {}
 
+-- Friends see XP in steps of 5% of the level, not every kill, so earning XP doesn't
+-- change what we share (and trigger a sync). The party XP box has live values.
+local function Step(value, max)
+    if not value or not max or max <= 0 then return value end
+    local step = max / 20
+    return math.floor(value / step) * step
+end
+
 function filters.char(d, share)
-    if share.zone then return d end
     local copy = CopyTable(d)
-    copy.zone = nil
+    copy.xp = Step(d.xp, d.xpMax)
+    copy.rested = Step(d.rested, d.xpMax)
+    if not share.zone then copy.zone = nil end
     return copy
+end
+
+-- Gold is shared to two significant digits (123g 45s -> 120g), for the same reason:
+-- every coin looted would otherwise count as a change worth syncing.
+local function RoundMoney(copper)
+    if not copper or copper < 100 then return copper end
+    local step = 10 ^ (math.floor(math.log10(copper)) - 1)
+    return math.floor(copper / step) * step
 end
 
 function filters.gear(d, share) return share.gear and d or nil end
@@ -46,7 +63,7 @@ end
 function filters.bags(d, share)
     if share.bags == "none" and not share.gold then return nil end
     local out = FilterContainer(d, share.bags)
-    out.money = share.gold and d.money or nil
+    out.money = share.gold and RoundMoney(d.money) or nil
     return out
 end
 

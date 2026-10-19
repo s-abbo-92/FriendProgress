@@ -162,6 +162,18 @@ end
 local lastReply = {}
 local buffers = {}
 
+-- The same hello often arrives twice (guild + friends list + group), and each copy
+-- would otherwise start its own transfer. Remember what we asked for and what we
+-- sent, per player and section, and skip an identical repeat for a while.
+local DEDUPE_WINDOW = 30
+local requested = {}   -- [ sender .. ":" .. section ] = { hash, time }  (we asked them)
+local served = {}      -- [ sender .. ":" .. section ] = { hash, time }  (they asked us)
+
+local function Recent(map, key, hash)
+    local e = map[key]
+    return e and e[1] == hash and GetTime() - e[2] < DEDUPE_WINDOW
+end
+
 local function NotifyLog(sender, old, new)
     if not ns.db.settings.notify or not old or not new then return end
     local since = old[1] and old[1].t or 0
@@ -181,6 +193,7 @@ local function OnSection(sender, payload)
     if section == "log" then NotifyLog(sender, c.sections.log, data) end
     c.sections[section] = data
     c.hashes[section] = hash
+    requested[sender .. ":" .. section] = nil
     c.lastSeen = GetServerTime()
     ns:Fire("DATA_UPDATED")
 end
@@ -202,7 +215,8 @@ handlers.H = function(sender, rest)
         elseif hash == "-" then
             -- They stopped sharing this section: forget our copy.
             c.sections[section], c.hashes[section] = nil, nil
-        elseif c.hashes[section] ~= hash then
+        elseif c.hashes[section] ~= hash and not Recent(requested, sender .. ":" .. section, hash) then
+            requested[sender .. ":" .. section] = { hash, GetTime() }
             need[#need + 1] = section
         end
     end
@@ -216,7 +230,14 @@ end
 
 handlers.Q = function(sender, rest)
     for section in rest:gmatch("[^,]+") do
-        if ns.IsSection(section) then SendSection(section, sender) end
+        if ns.IsSection(section) then
+            local hash = (ns.GetChar(ns.me).sharedHashes or {})[section] or ""
+            local key = sender .. ":" .. section
+            if not Recent(served, key, hash) then
+                served[key] = { hash, GetTime() }
+                SendSection(section, sender)
+            end
+        end
     end
 end
 
