@@ -30,6 +30,7 @@ local RIGHT_X = 236   -- left edge of tabs / body / settings
 local frame, bodyText, body
 local listButtons, tabButtons = {}, {}
 local selected, tab = nil, "overview"
+local legacyBody = false   -- true if the virtual list couldn't be built; the plain scroll frame is used instead
 local menuStale = true   -- the group dropdown only needs regenerating when groups or the selection change
 local showSettings = false
 
@@ -612,13 +613,22 @@ local function Build()
     frame = CreateFrame("Frame", "FriendProgressFrame", UIParent, "BasicFrameTemplateWithInset")
     frame:SetSize(WIDTH, HEIGHT)
     frame:SetPoint("CENTER")
+    local pos = ns.db.settings.windowPos
+    if pos then
+        frame:ClearAllPoints()
+        frame:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
+    end
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, relPoint, x, y = self:GetPoint()
+        ns.db.settings.windowPos = { point, relPoint, x, y }
+    end)
     frame:Hide()
     tinsert(UISpecialFrames, "FriendProgressFrame")   -- Escape closes it
 
@@ -703,6 +713,51 @@ local function Build()
     bodyText:SetJustifyV("TOP")
     bodyText:SetSpacing(3)
 
+    -- Virtual list: only the visible lines exist as frames, so long recipe and bag
+    -- lists stay cheap to redraw. Falls back to the plain scroll frame above on error.
+    legacyBody = not pcall(function()
+        local box = CreateFrame("Frame", nil, frame, "WowScrollBoxList")
+        local bar = CreateFrame("EventFrame", nil, frame, "MinimalScrollBar")
+        bar:SetPoint("TOPLEFT", box, "TOPRIGHT", 4, 0)
+        bar:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 4, 0)
+
+        -- An invisible FontString of the same width measures how tall each line wraps.
+        local measure = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        measure:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        measure:SetWidth(bodyW - 8)
+        measure:SetSpacing(3)
+        measure:SetAlpha(0)
+
+        local view = CreateScrollBoxListLinearView()
+        view:SetElementExtentCalculator(function(_, text)
+            measure:SetText(text)
+            return math.max(14, measure:GetStringHeight() + 3)
+        end)
+        view:SetElementInitializer("Frame", function(row, text)
+            if not row.text then
+                row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                row.text:SetPoint("TOPLEFT", 4, 0)
+                row.text:SetPoint("TOPRIGHT", -4, 0)
+                row.text:SetJustifyH("LEFT")
+                row.text:SetJustifyV("TOP")
+                row.text:SetSpacing(3)
+                row:SetHyperlinksEnabled(true)
+                row:SetScript("OnHyperlinkEnter", function(self, link)
+                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT", 12, 0)
+                    GameTooltip:SetHyperlink(link)
+                    GameTooltip:Show()
+                end)
+                row:SetScript("OnHyperlinkLeave", GameTooltip_Hide)
+                row:SetScript("OnHyperlinkClick", function(_, link, linkText, button)
+                    SetItemRef(link, linkText, button)
+                end)
+            end
+            row.text:SetText(text)
+        end)
+        ScrollUtil.InitScrollBoxListWithScrollBar(box, bar, view)
+        frame.listBox, frame.listBar = box, bar
+    end)
+
     local sync = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     sync:SetSize(100, 22)
     sync:SetPoint("BOTTOMRIGHT", -12, 12)
@@ -778,7 +833,12 @@ function ns.RefreshUI()
 
     for key, b in pairs(tabButtons) do b:SetEnabled(showSettings or key ~= tab) end
     frame.settingsPanel:SetShown(showSettings)
-    frame.bodyScroll:SetShown(not showSettings)
+    local useList = frame.listBox and not legacyBody
+    frame.bodyScroll:SetShown(not showSettings and not useList)
+    if frame.listBox then
+        frame.listBox:SetShown(not showSettings and useList)
+        frame.listBar:SetShown(not showSettings and useList)
+    end
     local searching = tab == "prof" and not showSettings
     frame.search:SetShown(searching)
     if showSettings then return end
@@ -787,6 +847,11 @@ function ns.RefreshUI()
     frame.bodyScroll:ClearAllPoints()
     frame.bodyScroll:SetPoint("TOPLEFT", RIGHT_X, searching and -86 or -60)
     frame.bodyScroll:SetPoint("BOTTOMRIGHT", -32, 40)
+    if frame.listBox then
+        frame.listBox:ClearAllPoints()
+        frame.listBox:SetPoint("TOPLEFT", RIGHT_X, searching and -86 or -60)
+        frame.listBox:SetPoint("BOTTOMRIGHT", -32, 40)
+    end
 
     local query = searching and strtrim(frame.search:GetText() or "") or ""
     local lines
@@ -796,8 +861,13 @@ function ns.RefreshUI()
         local c = selected and ns.db.chars[selected]
         lines = c and render[tab](c, selected) or { "No characters to show." }
     end
-    bodyText:SetText(concat(lines, "\n"))
-    body:SetHeight(bodyText:GetStringHeight() + 8)
+    if useList then
+        local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
+        frame.listBox:SetDataProvider(CreateDataProvider(lines), retain)
+    else
+        bodyText:SetText(concat(lines, "\n"))
+        body:SetHeight(bodyText:GetStringHeight() + 8)
+    end
 end
 
 function ns.ToggleUI()

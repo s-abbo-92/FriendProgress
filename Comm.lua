@@ -324,7 +324,14 @@ end
 ns:On("PLAYER_XP_UPDATE", function() ns.SendLiveXP() end)
 ns:On("PLAYER_LEVEL_UP", function() ns.SendLiveXP() end)
 -- Everyone resends on roster changes so people who just joined get current values.
-ns:On("GROUP_ROSTER_UPDATE", function() ns.SendLiveXP() end)
+ns:On("GROUP_ROSTER_UPDATE", function()
+    -- Forget XP from people who left the group.
+    for key in pairs(ns.liveXP) do
+        local short = Ambiguate(key, "none")
+        if not (UnitInParty(short) or UnitInRaid(short)) then ns.liveXP[key] = nil end
+    end
+    ns.SendLiveXP()
+end)
 
 ---------------------------------------------------------------------------
 -- Who we answer. Group and guild channels can't be spoofed, so anything that

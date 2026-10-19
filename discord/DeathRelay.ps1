@@ -135,7 +135,8 @@ function Send-Death($d) {
         timestamp   = [DateTimeOffset]::FromUnixTimeSeconds($d.Time).UtcDateTime.ToString("o")
         footer      = @{ text = $d.Name }
     }
-    $body = @{ username = "FriendProgress"; embeds = @($embed) } | ConvertTo-Json -Depth 5
+    # allowed_mentions: nothing in a name can ping @everyone or a role.
+    $body = @{ username = "FriendProgress"; embeds = @($embed); allowed_mentions = @{ parse = @() } } | ConvertTo-Json -Depth 5
     $bytes = [Text.Encoding]::UTF8.GetBytes($body)
     for ($try = 1; $try -le 3; $try++) {
         try {
@@ -160,7 +161,15 @@ $MaxAge = 24 * 3600   # don't post deaths older than this (e.g. the backlog on f
 # What we've posted, kept across restarts so a reload doesn't repost old deaths.
 $postedPath = Join-Path $PSScriptRoot "posted.txt"
 $posted = New-Object 'System.Collections.Generic.HashSet[string]'
-if (Test-Path $postedPath) { Get-Content $postedPath | ForEach-Object { [void]$posted.Add($_) } }
+if (Test-Path $postedPath) {
+    $lines = @(Get-Content $postedPath)
+    # Keep the file from growing forever: older entries are past $MaxAge anyway.
+    if ($lines.Count -gt 5000) {
+        $lines = @($lines | Select-Object -Last 2000)
+        Set-Content $postedPath $lines
+    }
+    $lines | ForEach-Object { [void]$posted.Add($_) }
+}
 
 function Read-Deaths($file) {
     # Saved as quoted strings in FriendProgressDB.relayQueue; the addon strips quotes from the fields.
