@@ -16,9 +16,7 @@ local function ApplyPosition()
 end
 
 local function Build()
-    button = CreateFrame("Button", "FriendProgressSyncButton", UIParent, "UIPanelButtonTemplate")
-    button:SetSize(80, 22)
-    button:SetText("Sync")
+    button = ns.Skin.Button(UIParent, "Sync", 80, 22, function() ns.SyncNow() end, "FriendProgressSyncButton")
     button:SetFrameStrata("LOW")
     button:SetClampedToScreen(true)
     button:SetMovable(true)
@@ -31,8 +29,9 @@ local function Build()
         local point, _, relPoint, x, y = self:GetPoint()
         Settings().pos = { point, relPoint, x, y }
     end)
-    button:SetScript("OnClick", function() ns.SyncNow() end)
+    local base = button:GetScript("OnEnter")   -- the skin's hover highlight
     button:SetScript("OnEnter", function(self)
+        base(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("FriendProgress")
         GameTooltip:AddLine("Rescan yourself and ask friends for updates.", 1, 1, 1, true)
@@ -41,9 +40,13 @@ local function Build()
         end
         GameTooltip:Show()
     end)
-    button:SetScript("OnLeave", GameTooltip_Hide)
+    local baseLeave = button:GetScript("OnLeave")
+    button:SetScript("OnLeave", function(self)
+        baseLeave(self)
+        GameTooltip:Hide()
+    end)
 
-    button.hint = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    button.hint = ns.Skin.Font(button, 11, ns.Skin.C.muted)
     button.hint:SetPoint("BOTTOM", button, "TOP", 0, 3)
     button.hint:SetText("Drag to move")
 

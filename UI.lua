@@ -4,6 +4,9 @@ local _, ns = ...
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 local GetItemIcon = (C_Item and C_Item.GetItemIconByID) or GetItemIcon
 local floor, concat = math.floor, table.concat
+local S = ns.Skin
+local TITLE_H, TOP_Y, FOOT_H = 32, 44, 40   -- title bar; tab row; footer (heights / offsets)
+local BODY_SIZE = 13
 
 local TABS = {
     { "overview", "Overview" },
@@ -23,7 +26,7 @@ local SLOT_NAMES = {
     [16] = "Main Hand", [17] = "Off Hand", [18] = "Ranged", [19] = "Tabard",
 }
 
-local WIDTH, HEIGHT = 840, 570   -- minimum size; widens if the tab labels need it
+local WIDTH, HEIGHT = 840, 584   -- minimum size; widens if the tab labels need it
 local LIST_W = 190
 local RIGHT_X = 236   -- left edge of tabs / body / settings
 
@@ -58,7 +61,7 @@ local function Money(copper)
     return floor(copper / 10000) .. "g"
 end
 
-local function Gray(s) return "|cff808080" .. s .. "|r" end
+local function Gray(s) return "|cff" .. S.MUTED_HEX .. s .. "|r" end
 
 -- item is an itemID or an item string ("item:1234:..."). Uncached items show a
 -- grey placeholder link (still hoverable); GET_ITEM_INFO_RECEIVED refreshes the
@@ -229,7 +232,7 @@ function render.prof(c, key)
     for _, name in ipairs(names) do
         local r = recipes[name]
         lines[#lines + 1] = ""
-        lines[#lines + 1] = ("|cffffd100%s recipes|r  %s"):format(name, Gray("(updated " .. Ago(r.t) .. ")"))
+        lines[#lines + 1] = ("|cff33d999%s recipes|r  %s"):format(name, Gray("(updated " .. Ago(r.t) .. ")"))
         local list = {}
         for recipeID, itemID in pairs(r.list or {}) do
             list[#list + 1] = { id = recipeID, item = itemID, name = SpellName(recipeID) or "" }
@@ -301,7 +304,7 @@ function render.quest(c)
     local lines = {}
     for _, q in ipairs(quests) do
         local title = ("[%d] %s"):format(q.level or 0, q.title or ("quest " .. q.id))
-        lines[#lines + 1] = q.done and ("|cff40ff40" .. title .. " (complete)|r") or ("|cffffd100" .. title .. "|r")
+        lines[#lines + 1] = q.done and ("|cff40ff40" .. title .. " (complete)|r") or ("|cff33d999" .. title .. "|r")
         for _, o in ipairs(q.obj or {}) do
             local text, finished = o[1], o[2]
             lines[#lines + 1] = "    " .. (finished and Gray(text) or text)
@@ -368,17 +371,24 @@ local function ListButton(i)
     b:SetSize(LIST_W - 4, 34)
     b:SetPoint("TOPLEFT", 0, -(i - 1) * 36)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-    b.sel = b:CreateTexture(nil, "BACKGROUND")
+    b.hover = S.Solid(b, "BACKGROUND", S.C.accent, 0.08)
+    b.hover:SetAllPoints()
+    b.hover:Hide()
+    b.sel = S.Solid(b, "BACKGROUND", S.C.accent, 0.16)
     b.sel:SetAllPoints()
-    b.sel:SetColorTexture(1, 1, 1, 0.12)
-    b.name = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    b.name:SetPoint("TOPLEFT", 6, -4)
+    b.mark = S.Solid(b, "ARTWORK", S.C.accent, 1)
+    b.mark:SetPoint("TOPLEFT")
+    b.mark:SetPoint("BOTTOMLEFT")
+    b.mark:SetWidth(3)
+    b:SetScript("OnEnter", function(self) self.hover:Show() end)
+    b:SetScript("OnLeave", function(self) self.hover:Hide() end)
+    b.name = S.Font(b, 13, S.C.fg)
+    b.name:SetPoint("TOPLEFT", 12, -5)
     b.name:SetPoint("RIGHT", -4, 0)
     b.name:SetJustifyH("LEFT")
     b.name:SetWordWrap(false)
-    b.sub = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.sub:SetPoint("BOTTOMLEFT", 6, 4)
+    b.sub = S.Font(b, 11, S.C.muted)
+    b.sub:SetPoint("BOTTOMLEFT", 12, 5)
     b.sub:SetPoint("RIGHT", -4, 0)
     b.sub:SetJustifyH("LEFT")
     b.sub:SetWordWrap(false)
@@ -398,7 +408,7 @@ end
 local function BuildGroupDropdown()
     local dd = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
     dd:SetWidth(LIST_W)
-    dd:SetPoint("TOPLEFT", 12, -30)
+    dd:SetPoint("TOPLEFT", 12, -TOP_Y)
     dd:SetupMenu(function(_, root)
         local function Select(key)
             ns.db.settings.activeGroup = key
@@ -437,8 +447,8 @@ end
 
 local function BuildSettings()
     local panel = CreateFrame("Frame", nil, frame)
-    panel:SetPoint("TOPLEFT", RIGHT_X, -62)   -- below the tab row
-    panel:SetPoint("BOTTOMRIGHT", -12, 40)
+    panel:SetPoint("TOPLEFT", RIGHT_X + 8, -(TOP_Y + 40))   -- below the tab row
+    panel:SetPoint("BOTTOMRIGHT", -16, FOOT_H + 10)
     panel:Hide()
     frame.settingsPanel = panel
 
@@ -450,7 +460,15 @@ local function BuildSettings()
     end
 
     local function Label(text, font, indent, width)
-        local fs = panel:CreateFontString(nil, "OVERLAY", font or "GameFontNormal")
+        -- "GameFontNormalLarge" marks a section heading, "GameFontDisableSmall" a note.
+        local fs
+        if font == "GameFontNormalLarge" then
+            fs = S.Font(panel, 15, S.C.accent)
+        elseif font == "GameFontDisableSmall" then
+            fs = S.Font(panel, 11, S.C.muted)
+        else
+            fs = S.Font(panel, BODY_SIZE, S.C.fg)
+        end
         fs:SetPoint("TOPLEFT", x + (indent or 4), y)
         fs:SetJustifyH("LEFT")
         if width then fs:SetWidth(width) end
@@ -462,11 +480,10 @@ local function BuildSettings()
     -- A checkbox at (left, top). get() reads the value, set(checked) stores it,
     -- after(checked) runs once saved (default: resync what friends see).
     local function MakeCheck(left, top, text, font, get, set, after)
-        local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-        cb:SetSize(24, 24)
-        cb:SetPoint("TOPLEFT", left, top)
-        local fs = panel:CreateFontString(nil, "OVERLAY", font)
-        fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        local cb = S.Check(panel, 18)
+        cb:SetPoint("TOPLEFT", left, top - 2)
+        local fs = S.Font(panel, font == "GameFontHighlightSmall" and 12 or BODY_SIZE, S.C.fg)
+        fs:SetPoint("LEFT", cb, "RIGHT", 8, 0)
         fs:SetText(text)
         cb.get = get
         cb:SetScript("OnClick", function(self)
@@ -493,7 +510,7 @@ local function BuildSettings()
     local function RadioRow(text, options, get, set, after)
         local left = x + 8
         if text then
-            local fs = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            local fs = S.Font(panel, BODY_SIZE, S.C.fg)
             fs:SetPoint("TOPLEFT", left, y - 5)
             fs:SetText(text)
             left = x + 56
@@ -503,7 +520,7 @@ local function BuildSettings()
             local _, label = MakeCheck(left, y, o[2], "GameFontHighlightSmall",
                 function() return get() == value end,
                 function() set(value) end, after)
-            left = left + 26 + label:GetStringWidth() + 12
+            left = left + 30 + label:GetStringWidth() + 12
         end
         y = y - 26
     end
@@ -561,14 +578,11 @@ local function BuildSettings()
     OnScreenToggle("Lock positions",
         function() return ns.db.settings.locked end,
         function(v) ns.db.settings.locked = v end)
-    local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    reset:SetSize(120, 22)
-    reset:SetPoint("TOPLEFT", x + 8, y - 2)
-    reset:SetText("Reset positions")
-    reset:SetScript("OnClick", function()
+    local reset = S.Button(panel, "Reset positions", 120, 22, function()
         ns.ResetPartyXPPosition()
         ns.ResetSyncButtonPosition()
     end)
+    reset:SetPoint("TOPLEFT", x + 8, y - 2)
     y = y - 30
     Label("Unlock to drag them anywhere. Party members need FriendProgress for their XP to show.",
         "GameFontDisableSmall", nil, 250)
@@ -610,8 +624,10 @@ end
 -- Main frame
 ---------------------------------------------------------------------------
 local function Build()
-    frame = CreateFrame("Frame", "FriendProgressFrame", UIParent, "BasicFrameTemplateWithInset")
+    frame = CreateFrame("Frame", "FriendProgressFrame", UIParent)
     frame:SetSize(WIDTH, HEIGHT)
+    S.Solid(frame, "BACKGROUND", S.C.bg):SetAllPoints()
+    S.Edge(frame, S.C.line)
     frame:SetPoint("CENTER")
     local pos = ns.db.settings.windowPos
     if pos then
@@ -632,22 +648,60 @@ local function Build()
     frame:Hide()
     tinsert(UISpecialFrames, "FriendProgressFrame")   -- Escape closes it
 
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    title:SetPoint("TOP", 0, -5)
+    -- Title bar, sidebar and footer panels
+    local bar = S.Solid(frame, "BACKGROUND", S.C.panel)
+    bar:SetPoint("TOPLEFT", 1, -1)
+    bar:SetPoint("TOPRIGHT", -1, -1)
+    bar:SetHeight(TITLE_H)
+    local barRule = S.Solid(frame, "BORDER", S.C.line)
+    barRule:SetPoint("TOPLEFT", 1, -(TITLE_H + 1))
+    barRule:SetPoint("TOPRIGHT", -1, -(TITLE_H + 1))
+    barRule:SetHeight(1)
+
+    local side = S.Solid(frame, "BACKGROUND", S.C.panel)
+    side:SetPoint("TOPLEFT", 1, -(TITLE_H + 2))
+    side:SetPoint("BOTTOMLEFT", 1, FOOT_H)
+    side:SetWidth(RIGHT_X - 14)
+    local sideRule = S.Solid(frame, "BORDER", S.C.line)
+    sideRule:SetPoint("TOPLEFT", side, "TOPRIGHT")
+    sideRule:SetPoint("BOTTOMLEFT", side, "BOTTOMRIGHT")
+    sideRule:SetWidth(1)
+
+    local foot = S.Solid(frame, "BACKGROUND", S.C.panel)
+    foot:SetPoint("BOTTOMLEFT", 1, 1)
+    foot:SetPoint("BOTTOMRIGHT", -1, 1)
+    foot:SetHeight(FOOT_H - 1)
+    local footRule = S.Solid(frame, "BORDER", S.C.line)
+    footRule:SetPoint("BOTTOMLEFT", 1, FOOT_H)
+    footRule:SetPoint("BOTTOMRIGHT", -1, FOOT_H)
+    footRule:SetHeight(1)
+
+    local title = S.Font(frame, 14, S.C.fg)
+    title:SetPoint("TOPLEFT", 14, -10)
     title:SetText("FriendProgress")
+    local version = S.Font(frame, 11, S.C.muted)
+    version:SetPoint("LEFT", title, "RIGHT", 8, -1)
+    version:SetText("v" .. ns.VERSION)
+    local close = S.Button(frame, "X", 26, 22, function() frame:Hide() end)
+    close:SetPoint("TOPRIGHT", -6, -5)
+
+    -- Content panel behind the tab body
+    local content = S.Panel(frame, S.C.panel, S.C.line)
+    content:SetPoint("TOPLEFT", RIGHT_X - 6, -(TOP_Y + 28))
+    content:SetPoint("BOTTOMRIGHT", -10, FOOT_H + 6)
 
     BuildGroupDropdown()
 
     local listScroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    listScroll:SetPoint("TOPLEFT", 12, -60)
-    listScroll:SetPoint("BOTTOMLEFT", 12, 40)
+    listScroll:SetPoint("TOPLEFT", 12, -(TOP_Y + 32))
+    listScroll:SetPoint("BOTTOMLEFT", 12, FOOT_H + 6)
     listScroll:SetWidth(LIST_W)
     frame.listContent = CreateFrame("Frame", nil, listScroll)
     frame.listContent:SetSize(LIST_W, 1)
     listScroll:SetScrollChild(frame.listContent)
 
-    frame.emptyList = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    frame.emptyList:SetPoint("TOPLEFT", 16, -66)
+    frame.emptyList = S.Font(frame, 12, S.C.muted)
+    frame.emptyList:SetPoint("TOPLEFT", 16, -(TOP_Y + 40))
     frame.emptyList:SetWidth(LIST_W - 10)
     frame.emptyList:SetJustifyH("LEFT")
     frame.emptyList:SetText("Nobody here yet. Right-click a character in \"Everyone\" to add them to a group.")
@@ -655,12 +709,11 @@ local function Build()
     -- Tabs size to their labels, which UI skins with larger fonts can make wider.
     local tabX = RIGHT_X
     for _, t in ipairs(TABS) do
-        local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        b:SetText(t[2])
+        local b = S.Tab(frame, t[2])
         local w = math.max(70, math.ceil(b:GetFontString():GetStringWidth()) + 24)
-        b:SetSize(w, 22)
-        b:SetPoint("TOPLEFT", tabX, -30)
-        tabX = tabX + w + 3
+        b:SetSize(w, 24)
+        b:SetPoint("TOPLEFT", tabX, -TOP_Y)
+        tabX = tabX + w + 4
         b:SetScript("OnClick", function()
             tab = t[1]
             showSettings = false
@@ -672,7 +725,7 @@ local function Build()
     -- Recipe search, shown on the Professions tab only.
     local search = CreateFrame("EditBox", nil, frame, "SearchBoxTemplate")
     search:SetSize(260, 20)
-    search:SetPoint("TOPLEFT", RIGHT_X + 8, -60)
+    search:SetPoint("TOPLEFT", RIGHT_X + 8, -(TOP_Y + 34))
     search:SetAutoFocus(false)
     if search.Instructions then search.Instructions:SetText("Who can craft...?") end
     -- Wait for a pause in typing; each redraw scans every friend's recipes.
@@ -706,7 +759,7 @@ local function Build()
     body:SetScript("OnHyperlinkClick", function(_, link, text, button)
         SetItemRef(link, text, button)
     end)
-    bodyText = body:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    bodyText = S.Font(body, BODY_SIZE, S.C.fg)
     bodyText:SetPoint("TOPLEFT", 4, -4)
     bodyText:SetWidth(bodyW - 10)
     bodyText:SetJustifyH("LEFT")
@@ -722,7 +775,7 @@ local function Build()
         bar:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 4, 0)
 
         -- An invisible FontString of the same width measures how tall each line wraps.
-        local measure = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        local measure = S.Font(frame, BODY_SIZE, S.C.fg)
         measure:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
         measure:SetWidth(bodyW - 8)
         measure:SetSpacing(3)
@@ -735,7 +788,7 @@ local function Build()
         end)
         view:SetElementInitializer("Frame", function(row, text)
             if not row.text then
-                row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+                row.text = S.Font(row, BODY_SIZE, S.C.fg)
                 row.text:SetPoint("TOPLEFT", 4, 0)
                 row.text:SetPoint("TOPRIGHT", -4, 0)
                 row.text:SetJustifyH("LEFT")
@@ -758,25 +811,22 @@ local function Build()
         frame.listBox, frame.listBar = box, bar
     end)
 
-    local sync = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    sync:SetSize(100, 22)
-    sync:SetPoint("BOTTOMRIGHT", -12, 12)
-    sync:SetText("Sync now")
-    sync:SetScript("OnClick", function() SlashCmdList.FRIENDPROGRESS("sync") end)
+    local sync = S.Button(frame, "Sync now", 100, 24, function() SlashCmdList.FRIENDPROGRESS("sync") end)
+    sync:SetPoint("BOTTOMRIGHT", -12, 8)
 
-    local sharing = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    sharing:SetSize(100, 22)
-    sharing:SetPoint("RIGHT", sync, "LEFT", -4, 0)
-    sharing:SetText("Sharing...")
+    local sharing = S.Tab(frame, "Sharing...")
+    sharing:SetSize(100, 24)
+    sharing:SetPoint("RIGHT", sync, "LEFT", -6, 0)
     sharing:SetScript("OnClick", function()
         showSettings = not showSettings
         ns.RefreshUI()
     end)
+    frame.sharingButton = sharing
 
     BuildSettings()
 
-    local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    hint:SetPoint("BOTTOMLEFT", 16, 18)
+    local hint = S.Font(frame, 11, S.C.muted)
+    hint:SetPoint("BOTTOMLEFT", 16, 14)
     hint:SetText("Friends need FriendProgress too. Right-click a character to add them to a group.")
 
     frame:SetScript("OnShow", function() ns.RefreshUI() end)
@@ -825,13 +875,15 @@ function ns.RefreshUI()
         b.name:SetText(label)
         b.sub:SetText(("Lvl %s  %s"):format(s.level or "?", Gray(Ago(c.lastSeen))))
         b.sel:SetShown(key == selected)
+        b.mark:SetShown(key == selected)
         b:Show()
     end
     for i = #keys + 1, #listButtons do listButtons[i]:Hide() end
     frame.listContent:SetHeight(math.max(1, #keys * 36))
     frame.emptyList:SetShown(#keys == 0)
 
-    for key, b in pairs(tabButtons) do b:SetEnabled(showSettings or key ~= tab) end
+    for key, b in pairs(tabButtons) do b:SetSelected(not showSettings and key == tab) end
+    frame.sharingButton:SetSelected(showSettings)
     frame.settingsPanel:SetShown(showSettings)
     local useList = frame.listBox and not legacyBody
     frame.bodyScroll:SetShown(not showSettings and not useList)
@@ -845,12 +897,12 @@ function ns.RefreshUI()
 
     -- Make room for the search box on the Professions tab.
     frame.bodyScroll:ClearAllPoints()
-    frame.bodyScroll:SetPoint("TOPLEFT", RIGHT_X, searching and -86 or -60)
-    frame.bodyScroll:SetPoint("BOTTOMRIGHT", -32, 40)
+    frame.bodyScroll:SetPoint("TOPLEFT", RIGHT_X, searching and -(TOP_Y + 58) or -(TOP_Y + 32))
+    frame.bodyScroll:SetPoint("BOTTOMRIGHT", -32, FOOT_H + 12)
     if frame.listBox then
         frame.listBox:ClearAllPoints()
-        frame.listBox:SetPoint("TOPLEFT", RIGHT_X, searching and -86 or -60)
-        frame.listBox:SetPoint("BOTTOMRIGHT", -32, 40)
+        frame.listBox:SetPoint("TOPLEFT", RIGHT_X, searching and -(TOP_Y + 58) or -(TOP_Y + 32))
+        frame.listBox:SetPoint("BOTTOMRIGHT", -32, FOOT_H + 12)
     end
 
     local query = searching and strtrim(frame.search:GetText() or "") or ""

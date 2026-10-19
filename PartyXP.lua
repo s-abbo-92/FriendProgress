@@ -4,7 +4,8 @@
 local _, ns = ...
 
 local WIDTH, ROW_H, PAD = 210, 30, 6
-local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local BAR_TEXTURE = "Interface\\Buttons\\WHITE8X8"
+local S = ns.Skin
 
 local box
 local rows = {}
@@ -46,8 +47,9 @@ local function Build()
 
     box.bg = box:CreateTexture(nil, "BACKGROUND")
     box.bg:SetAllPoints()
+    box.edge = S.Edge(box, S.C.line)
 
-    box.hint = box:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    box.hint = S.Font(box, 11, S.C.muted)
     box.hint:SetPoint("BOTTOM", box, "TOP", 0, 3)
     box.hint:SetText("Party XP: drag to move, then /fp lock")
 
@@ -61,9 +63,9 @@ local function Row(i)
     r:SetSize(WIDTH - PAD * 2, ROW_H - 2)
     r:SetPoint("TOPLEFT", PAD, -PAD - (i - 1) * ROW_H)
 
-    r.level = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    r.level = S.Font(r, 11, S.C.muted)
     r.level:SetPoint("TOPRIGHT")
-    r.name = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    r.name = S.Font(r, 12, S.C.fg)
     r.name:SetPoint("TOPLEFT")
     r.name:SetPoint("RIGHT", r.level, "LEFT", -4, 0)
     r.name:SetJustifyH("LEFT")
@@ -75,18 +77,18 @@ local function Row(i)
     r.rested:SetPoint("BOTTOMRIGHT")
     r.rested:SetHeight(12)
     r.rested:SetStatusBarTexture(BAR_TEXTURE)
-    r.rested:SetStatusBarColor(0.0, 0.39, 0.88, 0.45)
+    r.rested:SetStatusBarColor(0.25, 0.5, 0.85, 0.45)
     r.bg = r.rested:CreateTexture(nil, "BACKGROUND")
     r.bg:SetAllPoints()
-    r.bg:SetColorTexture(0, 0, 0, 0.6)
+    r.bg:SetColorTexture(S.C.bg.r, S.C.bg.g, S.C.bg.b, 0.9)
 
     r.bar = CreateFrame("StatusBar", nil, r)
     r.bar:SetAllPoints(r.rested)
     r.bar:SetFrameLevel(r.rested:GetFrameLevel() + 1)
     r.bar:SetStatusBarTexture(BAR_TEXTURE)
-    r.bar:SetStatusBarColor(0.58, 0.0, 0.55)
+    r.bar:SetStatusBarColor(S.C.accent.r, S.C.accent.g, S.C.accent.b)
 
-    r.text = r.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    r.text = S.Font(r.bar, 10, S.C.fg, "OUTLINE")
     r.text:SetPoint("CENTER")
 
     rows[i] = r
@@ -124,7 +126,7 @@ local function Fill(r, unit)
         r.text:SetText("Max level")
     else
         SetBars(r, 0, 1, 0)
-        r.text:SetText("|cff808080no FriendProgress|r")
+        r.text:SetText("|cff9a9ea6no FriendProgress|r")
     end
 end
 
@@ -143,9 +145,9 @@ function ns.RefreshPartyXP()
     box:EnableMouse(not locked)   -- locked = click-through
     box.hint:SetShown(not locked)
     if locked then
-        box.bg:SetColorTexture(0, 0, 0, 0.35)
+        box.bg:SetColorTexture(S.C.panel.r, S.C.panel.g, S.C.panel.b, 0.8)
     else
-        box.bg:SetColorTexture(0.1, 0.3, 0.7, 0.5)
+        box.bg:SetColorTexture(S.C.accent.r, S.C.accent.g, S.C.accent.b, 0.25)
     end
 
     for i, unit in ipairs(units) do
