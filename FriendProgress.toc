@@ -9,6 +9,7 @@
 
 Core.lua
 Serialize.lua
+Validate.lua
 Collect.lua
 Share.lua
 Comm.lua

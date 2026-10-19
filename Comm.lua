@@ -158,9 +158,9 @@ end
 
 local function OnSection(sender, payload)
     local section, hash, body = payload:match("^(%w+)|(%x*)|(.*)$")
-    if not section then return end
-    local data = ns.Deserialize(body)
-    if type(data) ~= "table" then return end
+    if not section or not ns.IsSection(section) then return end
+    local data = ns.SanitizeSection(section, ns.Deserialize(body))
+    if not data then return end
     local c = ns.GetChar(sender)
     if section == "log" then NotifyLog(sender, c.sections.log, data) end
     c.sections[section] = data
@@ -181,7 +181,9 @@ handlers.H = function(sender, rest)
     c.lastSeen = GetServerTime()
     local need = {}
     for section, hash in list:gmatch("(%w+)=([%x%-]+)") do
-        if hash == "-" then
+        if not ns.IsSection(section) then
+            -- ignore names we don't know
+        elseif hash == "-" then
             -- They stopped sharing this section: forget our copy.
             c.sections[section], c.hashes[section] = nil, nil
         elseif c.hashes[section] ~= hash then
@@ -197,7 +199,9 @@ handlers.H = function(sender, rest)
 end
 
 handlers.Q = function(sender, rest)
-    for section in rest:gmatch("[^,]+") do SendSection(section, sender) end
+    for section in rest:gmatch("[^,]+") do
+        if ns.IsSection(section) then SendSection(section, sender) end
+    end
 end
 
 handlers.D = function(sender, rest)
@@ -275,10 +279,47 @@ ns:On("PLAYER_LEVEL_UP", function() ns.SendLiveXP() end)
 -- Everyone resends on roster changes so people who just joined get current values.
 ns:On("GROUP_ROSTER_UPDATE", function() ns.SendLiveXP() end)
 
+---------------------------------------------------------------------------
+-- Who we answer. Group and guild channels can't be spoofed, so anything that
+-- arrives on them is from a group or guild mate. Whispers can come from anyone,
+-- so those must be from a friend, someone in our group, or a guild member.
+---------------------------------------------------------------------------
+local guildMembers = {}   -- [ short name ] = true, from the guild roster
+local guildStale = true   -- the roster changes often; only reread it when a whisper needs checking
+
+local function RefreshGuildMembers()
+    guildStale = false
+    wipe(guildMembers)
+    if not IsInGuild() then return end
+    for i = 1, GetNumGuildMembers() do
+        local name = GetGuildRosterInfo(i)
+        if name then guildMembers[Ambiguate(name, "none")] = true end
+    end
+end
+ns:On("GUILD_ROSTER_UPDATE", function() guildStale = true end)
+ns:Listen("LOGIN", function()
+    if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
+end)
+
+local SHARED_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT = true }
+
+local function IsTrusted(sender, channel)
+    if SHARED_CHANNELS[channel] then return true end
+    if channel ~= "WHISPER" then return false end
+    local short = Ambiguate(sender, "none")
+    if UnitInParty(short) or UnitInRaid(short) then return true end
+    if guildStale then RefreshGuildMembers() end
+    if guildMembers[short] then return true end
+    for _, name in ipairs(OnlineFriends()) do
+        if Ambiguate(name, "none") == short then return true end
+    end
+    return false
+end
+
 ns:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or not ns.me then return end
     sender = ns.FullName(sender)
-    if sender == ns.me then return end
+    if sender == ns.me or not IsTrusted(sender, channel) then return end
     local kind, rest = text:match("^(%a)|(.*)$")
     local fn = kind and handlers[kind]
     if fn then fn(sender, rest) end

@@ -45,29 +45,39 @@ function ns.Serialize(v)
     return concat(out)
 end
 
+-- Input comes from other players, so every token is checked: a bad length must
+-- never move the read position backwards (that would loop forever).
+local MAX_DEPTH = 8
+
 local Read
-Read = function(s, pos)
+Read = function(s, pos, depth)
     local c = sub(s, pos, pos)
     if c == "n" then
         local e = find(s, ";", pos, true)
-        return tonumber(sub(s, pos + 1, e - 1)), e + 1
+        if not e then error("unterminated number") end
+        local n = tonumber(sub(s, pos + 1, e - 1))
+        if not n then error("bad number at " .. pos) end
+        return n, e + 1
     elseif c == "s" then
         local colon = find(s, ":", pos, true)
+        if not colon then error("unterminated string header") end
         local len = tonumber(sub(s, pos + 1, colon - 1))
+        if not len or len < 0 or len % 1 ~= 0 or colon + len > #s then error("bad string length at " .. pos) end
         return sub(s, colon + 1, colon + len), colon + len + 1
     elseif c == "T" then
         return true, pos + 1
     elseif c == "F" then
         return false, pos + 1
     elseif c == "{" then
+        if depth >= MAX_DEPTH then error("nested too deep") end
         local t = {}
         pos = pos + 1
         while sub(s, pos, pos) ~= "}" do
             if pos > #s then error("unterminated table") end
             local k, v
-            k, pos = Read(s, pos)
-            v, pos = Read(s, pos)
-            if k ~= nil then t[k] = v end
+            k, pos = Read(s, pos, depth + 1)
+            v, pos = Read(s, pos, depth + 1)
+            if type(k) == "number" or type(k) == "string" then t[k] = v end
         end
         return t, pos + 1
     end
@@ -76,7 +86,7 @@ end
 
 -- Returns the value, or nil if the string is malformed.
 function ns.Deserialize(s)
-    local ok, v = pcall(Read, s, 1)
+    local ok, v = pcall(Read, s, 1, 0)
     if ok then return v end
 end
 

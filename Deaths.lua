@@ -324,10 +324,11 @@ ns.OnMessage("K", function(sender, rest)
     local t, level, class, zone, killer, ability, damage, klevel, subzone = strsplit("|", rest)
     t, level = tonumber(t), tonumber(level)
     if not t or not level then return end
+    local Text = ns.CleanText
     local d = {
         name = sender, class = (class and class:match("^%u+$")) or nil, level = level,
-        zone = zone or "", subzone = subzone or "", killer = killer or "", klevel = tonumber(klevel),
-        ability = ability or "", damage = tonumber(damage), t = t,
+        zone = Text(zone), subzone = Text(subzone), killer = Text(killer), klevel = tonumber(klevel),
+        ability = Text(ability), damage = tonumber(damage), t = t,
     }
     if not Record(d) then return end   -- already heard it via another channel
     Alert(d)
