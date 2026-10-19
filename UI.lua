@@ -687,6 +687,7 @@ local function Build()
 
     -- Content panel behind the tab body
     local content = S.Panel(frame, S.C.panel, S.C.line)
+    content:SetFrameLevel(frame:GetFrameLevel() + 1)
     content:SetPoint("TOPLEFT", RIGHT_X - 6, -(TOP_Y + 28))
     content:SetPoint("BOTTOMRIGHT", -10, FOOT_H + 6)
 
@@ -810,6 +811,14 @@ local function Build()
         ScrollUtil.InitScrollBoxListWithScrollBar(box, bar, view)
         frame.listBox, frame.listBar = box, bar
     end)
+
+    -- The content panel is a frame too; make sure the text frames draw above it.
+    local above = content:GetFrameLevel() + 5
+    frame.bodyScroll:SetFrameLevel(above)
+    if frame.listBox then
+        frame.listBox:SetFrameLevel(above)
+        frame.listBar:SetFrameLevel(above + 1)
+    end
 
     local sync = S.Button(frame, "Sync now", 100, 24, function() SlashCmdList.FRIENDPROGRESS("sync") end)
     sync:SetPoint("BOTTOMRIGHT", -12, 8)
