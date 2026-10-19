@@ -124,3 +124,121 @@ function S.Check(parent, size)
     cb:SetScript("OnLeave", function(self) self.edge:SetColor(S.C.line) end)
     return cb
 end
+
+---------------------------------------------------------------------------
+-- A flat popup menu, used instead of the stock dropdown menus.
+-- items = list of { text, onClick, radio = true | checkbox = true, checked = bool,
+--                   title = true, divider = true }
+---------------------------------------------------------------------------
+local menu, catcher
+local menuRows = {}
+local ROW_H, DIVIDER_H, MENU_PAD = 24, 9, 4
+
+function S.HideMenu()
+    if menu then menu:Hide() end
+    if catcher then catcher:Hide() end
+end
+
+local function NewMenuRow()
+    local r = CreateFrame("Button", nil, menu)
+    r.hover = S.Solid(r, "BACKGROUND", S.C.accent, 0.14)
+    r.hover:SetAllPoints()
+    r.hover:Hide()
+    r.box = S.Solid(r, "ARTWORK", S.C.line)
+    r.box:SetSize(10, 10)
+    r.box:SetPoint("LEFT", 10, 0)
+    r.dot = S.Solid(r, "OVERLAY", S.C.accent)
+    r.dot:SetSize(6, 6)
+    r.dot:SetPoint("CENTER", r.box)
+    r.text = S.Font(r, 13, S.C.fg)
+    r.rule = S.Solid(r, "ARTWORK", S.C.line)
+    r.rule:SetPoint("LEFT", 8, 0)
+    r.rule:SetPoint("RIGHT", -8, 0)
+    r.rule:SetHeight(1)
+    r:SetScript("OnEnter", function(self) if self.clickable then self.hover:Show() end end)
+    r:SetScript("OnLeave", function(self) self.hover:Hide() end)
+    r:SetScript("OnClick", function(self)
+        local it = self.item
+        S.HideMenu()
+        if it and it.onClick then it.onClick() end
+    end)
+    return r
+end
+
+local function BuildMenu()
+    catcher = CreateFrame("Button", nil, UIParent)
+    catcher:SetAllPoints(UIParent)
+    catcher:SetFrameStrata("FULLSCREEN_DIALOG")
+    catcher:SetFrameLevel(1)
+    catcher:RegisterForClicks("AnyUp")
+    catcher:SetScript("OnClick", S.HideMenu)
+    catcher:Hide()
+
+    menu = S.Panel(UIParent, S.C.bg, S.C.line)
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(10)
+    menu:SetClampedToScreen(true)
+    menu:EnableMouse(true)
+    menu:Hide()
+end
+
+-- Shows the menu under `anchor`, or at the cursor when atCursor is set.
+-- Clicking the same anchor again closes it.
+function S.ShowMenu(anchor, items, minWidth, atCursor)
+    if not menu then BuildMenu() end
+    if menu:IsShown() and menu.owner == anchor then
+        S.HideMenu()
+        return
+    end
+    menu.owner = anchor
+
+    local hasMarks = false
+    for _, it in ipairs(items) do
+        if it.radio or it.checkbox then hasMarks = true end
+    end
+    local textX = hasMarks and 28 or 12
+
+    local y, width = MENU_PAD, minWidth or 120
+    for i, it in ipairs(items) do
+        local r = menuRows[i] or NewMenuRow()
+        menuRows[i] = r
+        r.item = it
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", menu, "TOPLEFT", 1, -y)
+        r:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -1, -y)
+        r.hover:Hide()
+        r.rule:SetShown(it.divider == true)
+        r.box:SetShown(it.radio == true or it.checkbox == true)
+        r.dot:SetShown((it.radio or it.checkbox) and it.checked == true or false)
+        r.text:SetShown(not it.divider)
+        r.clickable = not it.divider and not it.title
+        r:EnableMouse(r.clickable)
+        if it.divider then
+            r:SetHeight(DIVIDER_H)
+            y = y + DIVIDER_H
+        else
+            r.text:ClearAllPoints()
+            r.text:SetPoint("LEFT", it.title and 12 or textX, 0)
+            r.text:SetText(it.text or "")
+            local c = it.title and S.C.accent or S.C.fg
+            r.text:SetTextColor(c.r, c.g, c.b)
+            width = math.max(width, math.ceil(r.text:GetStringWidth()) + textX + 16)
+            r:SetHeight(ROW_H)
+            y = y + ROW_H
+        end
+        r:Show()
+    end
+    for i = #items + 1, #menuRows do menuRows[i]:Hide() end
+
+    menu:SetSize(width + 2, y + MENU_PAD)
+    menu:ClearAllPoints()
+    if atCursor then
+        local scale = UIParent:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx / scale, cy / scale)
+    else
+        menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    end
+    catcher:Show()
+    menu:Show()
+end

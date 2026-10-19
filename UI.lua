@@ -339,29 +339,25 @@ end
 -- Character list and its right-click menu
 ---------------------------------------------------------------------------
 local function ShowCharacterMenu(owner, key)
-    MenuUtil.CreateContextMenu(owner, function(_, root)
-        local s = ns.db.chars[key] and ns.db.chars[key].sections.char
-        root:CreateTitle(s and s.name or Ambiguate(key, "short"))
-        if #ns.db.groups > 0 then
-            for _, g in ipairs(ns.db.groups) do
-                local name = g.name
-                root:CreateCheckbox(name,
-                    function() return ns.GetGroup(name) and ns.GetGroup(name).members[key] or false end,
-                    function()
-                        ns.ToggleGroupMember(name, key)
-                        ns:Fire("GROUPS_CHANGED")
-                    end)
-            end
-            root:CreateDivider()
-        end
-        root:CreateButton("New group with this character...", function() ns.PromptNewGroup(key) end)
-        if key ~= ns.me then
-            root:CreateDivider()
-            root:CreateButton("Forget this character", function()
-                SlashCmdList.FRIENDPROGRESS("remove " .. key)
-            end)
-        end
-    end)
+    local c = ns.db.chars[key] and ns.db.chars[key].sections.char
+    local items = { { text = c and c.name or Ambiguate(key, "short"), title = true } }
+    for _, g in ipairs(ns.db.groups) do
+        local name = g.name
+        items[#items + 1] = { text = name, checkbox = true, checked = g.members[key] == true,
+            onClick = function()
+                ns.ToggleGroupMember(name, key)
+                ns:Fire("GROUPS_CHANGED")
+            end }
+    end
+    if #ns.db.groups > 0 then items[#items + 1] = { divider = true } end
+    items[#items + 1] = { text = "New group with this character...", onClick = function() ns.PromptNewGroup(key) end }
+    if key ~= ns.me then
+        items[#items + 1] = { divider = true }
+        items[#items + 1] = { text = "Forget this character", onClick = function()
+            SlashCmdList.FRIENDPROGRESS("remove " .. key)
+        end }
+    end
+    S.ShowMenu(owner, items, 180, true)
 end
 
 local function ListButton(i)
@@ -405,34 +401,46 @@ local function ListButton(i)
     return b
 end
 
-local function BuildGroupDropdown()
-    local dd = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
-    dd:SetWidth(LIST_W)
-    dd:SetPoint("TOPLEFT", 12, -TOP_Y)
-    dd:SetupMenu(function(_, root)
-        local function Select(key)
+local function GroupMenuItems()
+    local active = ns.db.settings.activeGroup
+    local function Select(key)
+        return function()
             ns.db.settings.activeGroup = key
             ns:Fire("GROUPS_CHANGED")
         end
-        local function IsActive(key) return ns.db.settings.activeGroup == key end
-        for _, f in ipairs(ns.BUILTIN_FILTERS) do
-            root:CreateRadio(f.label, function() return IsActive(f.key) end, function() Select(f.key) end)
+    end
+    local items = {}
+    for _, f in ipairs(ns.BUILTIN_FILTERS) do
+        items[#items + 1] = { text = f.label, radio = true, checked = active == f.key, onClick = Select(f.key) }
+    end
+    if #ns.db.groups > 0 then
+        items[#items + 1] = { divider = true }
+        for _, g in ipairs(ns.db.groups) do
+            items[#items + 1] = { text = g.name, radio = true, checked = active == g.name, onClick = Select(g.name) }
         end
-        if #ns.db.groups > 0 then
-            root:CreateDivider()
-            for _, g in ipairs(ns.db.groups) do
-                local name = g.name
-                root:CreateRadio(name, function() return IsActive(name) end, function() Select(name) end)
-            end
-        end
-        root:CreateDivider()
-        root:CreateButton("New group...", function() ns.PromptNewGroup() end)
-        local active = ns.db.settings.activeGroup
-        if ns.GetGroup(active) then
-            root:CreateButton("Rename \"" .. active .. "\"...", function() ns.PromptRenameGroup(active) end)
-            root:CreateButton("Delete \"" .. active .. "\"...", function() ns.PromptDeleteGroup(active) end)
-        end
-    end)
+    end
+    items[#items + 1] = { divider = true }
+    items[#items + 1] = { text = "New group...", onClick = function() ns.PromptNewGroup() end }
+    if ns.GetGroup(active) then
+        items[#items + 1] = { text = "Rename \"" .. active .. "\"...", onClick = function() ns.PromptRenameGroup(active) end }
+        items[#items + 1] = { text = "Delete \"" .. active .. "\"...", onClick = function() ns.PromptDeleteGroup(active) end }
+    end
+    return items
+end
+
+local function BuildGroupDropdown()
+    local dd = S.Button(frame, "", LIST_W, 26, function(self) S.ShowMenu(self, GroupMenuItems(), LIST_W) end)
+    dd:SetPoint("TOPLEFT", 12, -TOP_Y)
+    local label = dd:GetFontString()
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", 10, 0)
+    label:SetPoint("RIGHT", -24, 0)
+    label:SetJustifyH("LEFT")
+    local arrow = S.Font(dd, 12, S.C.muted)
+    arrow:SetPoint("RIGHT", -10, 1)
+    arrow:SetText("v")
+    -- RefreshUI calls this to update the label.
+    function dd:GenerateMenu() self:SetText(ns.ActiveFilterLabel()) end
     frame.groupDropdown = dd
 end
 
@@ -645,6 +653,7 @@ local function Build()
         local point, _, relPoint, x, y = self:GetPoint()
         ns.db.settings.windowPos = { point, relPoint, x, y }
     end)
+    frame:SetScript("OnHide", S.HideMenu)
     frame:Hide()
     tinsert(UISpecialFrames, "FriendProgressFrame")   -- Escape closes it
 
