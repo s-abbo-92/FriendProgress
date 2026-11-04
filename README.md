@@ -8,8 +8,17 @@ addon messages through your guild, your group and your in-game friends list.
 
 ## Install
 
-1. Download `FriendProgress-<version>.zip` (from whoever shares it with you, or the repository's
-   Releases page if it has one).
+### With WowUp
+
+1. In WowUp, select your `_classic_beta_` install.
+2. Go to **Get Addons**, choose **Install from URL** and paste `https://github.com/s-abbo-92/FriendProgress`.
+
+WowUp then offers updates whenever a new release is published. Carry on from step 3 below.
+
+### By hand
+
+1. Download `FriendProgress-<version>-forever.zip` from the repository's Releases page, or get
+   `FriendProgress-<version>.zip` from whoever shares it with you.
 2. Close WoW, then extract the zip into `World of Warcraft\_classic_beta_\Interface\AddOns\`
    (usually `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\`).
    You should end up with `AddOns\FriendProgress\FriendProgress.toc` and not an extra folder level.
@@ -98,10 +107,18 @@ powershell -ExecutionPolicy Bypass -File tools\Build-Quips.ps1
 ## Making a release
 
 1. Bump `## Version:` in `FriendProgress.toc` and `ns.VERSION` in `Core.lua` (they must match).
-2. Commit, then run:
+2. Commit and push, then tag that commit with the same version:
    ```
-   powershell -ExecutionPolicy Bypass -File tools\Package.ps1
+   git tag v0.3.2
+   git push origin v0.3.2
    ```
-3. Send `dist\FriendProgress-<version>.zip` to your friends.
 
-The zip is built from the last commit, so uncommitted changes aren't in it.
+GitHub Actions checks the tag matches both version numbers, builds the zip and publishes it as a
+GitHub Release, which is what WowUp updates from. Tags containing `alpha` or `beta` become
+pre-releases, which WowUp's Stable channel skips.
+
+To build a zip locally instead, commit, then run:
+```
+powershell -ExecutionPolicy Bypass -File tools\Package.ps1
+```
+That writes `dist\FriendProgress-<version>.zip` from the last commit, so uncommitted changes aren't in it.

@@ -1,0 +1,5 @@
+# Read by the BigWigs packager in .github/workflows/release.yml.
+package-as: FriendProgress
+
+ignore:
+  - tools
