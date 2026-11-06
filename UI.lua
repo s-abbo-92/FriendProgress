@@ -34,6 +34,7 @@ local frame, bodyText, body
 local listButtons, tabButtons = {}, {}
 local selected, tab = nil, "overview"
 local legacyBody = false   -- true if the virtual list couldn't be built; the plain scroll frame is used instead
+local expandedRecipes = {}   -- [ recipeID ] = true while its materials are unfolded on the Professions tab
 local menuStale = true   -- the group dropdown only needs regenerating when groups or the selection change
 local showSettings = false
 
@@ -140,7 +141,9 @@ local function XPRateLines(lines, c, s, key)
     end
     if not rate or rate <= 0 then return end
     lines[#lines + 1] = ("XP per hour: about %d"):format(floor(rate))
-    local seconds = math.max(s.xpMax - (s.xp or 0), 0) / rate * 3600
+    -- Friends' XP is shared in 5% steps (rounded down); assume the middle of the step.
+    local xp = (s.xp or 0) + (key ~= ns.me and s.xpMax / 40 or 0)
+    local seconds = math.max(s.xpMax - xp, 0) / rate * 3600
     if seconds < 100 * 3600 then
         lines[#lines + 1] = "Next level: about " .. Duration(seconds) .. Gray("  at this rate")
     end
@@ -285,8 +288,14 @@ function render.prof(c, key)
         end
         table.sort(list, function(a, b) return a.name < b.name end)
         for _, e in ipairs(list) do
-            lines[#lines + 1] = "    " .. RecipeText(e.id, e.item)
-            MaterialLines(lines, c, r.mats and r.mats[e.id])
+            -- Materials unfold on click: listing them all would add hundreds of item lines.
+            local mats = r.mats and r.mats[e.id]
+            local toggle = ""
+            if mats and next(mats) then
+                toggle = ("|Hfp:mats:%d|h|cff33d999[%s]|r|h "):format(e.id, expandedRecipes[e.id] and "-" or "+")
+            end
+            lines[#lines + 1] = "    " .. toggle .. RecipeText(e.id, e.item)
+            if toggle ~= "" and expandedRecipes[e.id] then MaterialLines(lines, c, mats) end
         end
     end
     return lines
@@ -380,6 +389,27 @@ function render.deaths()
     end
     if #lines == 0 then return { "No deaths yet. Long may it last." } end
     return lines
+end
+
+---------------------------------------------------------------------------
+-- Links in the text: item and spell links behave like chat links; our own "fp:mats:<id>"
+-- links fold and unfold a recipe's materials.
+---------------------------------------------------------------------------
+local function LinkEnter(self, link)
+    if link:sub(1, 3) == "fp:" then return end
+    GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT", 12, 0)
+    GameTooltip:SetHyperlink(link)
+    GameTooltip:Show()
+end
+
+local function LinkClick(_, link, text, button)
+    local recipeID = tonumber(link:match("^fp:mats:(%d+)$"))
+    if recipeID then
+        expandedRecipes[recipeID] = not expandedRecipes[recipeID] or nil
+        ns.RefreshUI()
+        return
+    end
+    SetItemRef(link, text, button)
 end
 
 ---------------------------------------------------------------------------
@@ -811,15 +841,9 @@ local function Build()
     -- Item and spell links in the text: hover for a tooltip; click behaves like
     -- a chat link (shift-click to link in chat, ctrl-click to try on).
     body:SetHyperlinksEnabled(true)
-    body:SetScript("OnHyperlinkEnter", function(self, link)
-        GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT", 12, 0)
-        GameTooltip:SetHyperlink(link)
-        GameTooltip:Show()
-    end)
+    body:SetScript("OnHyperlinkEnter", LinkEnter)
     body:SetScript("OnHyperlinkLeave", GameTooltip_Hide)
-    body:SetScript("OnHyperlinkClick", function(_, link, text, button)
-        SetItemRef(link, text, button)
-    end)
+    body:SetScript("OnHyperlinkClick", LinkClick)
     bodyText = S.Font(body, BODY_SIZE, S.C.fg)
     bodyText:SetPoint("TOPLEFT", 4, -4)
     bodyText:SetWidth(bodyW - 10)
@@ -856,15 +880,9 @@ local function Build()
                 row.text:SetJustifyV("TOP")
                 row.text:SetSpacing(3)
                 row:SetHyperlinksEnabled(true)
-                row:SetScript("OnHyperlinkEnter", function(self, link)
-                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT", 12, 0)
-                    GameTooltip:SetHyperlink(link)
-                    GameTooltip:Show()
-                end)
+                row:SetScript("OnHyperlinkEnter", LinkEnter)
                 row:SetScript("OnHyperlinkLeave", GameTooltip_Hide)
-                row:SetScript("OnHyperlinkClick", function(_, link, linkText, button)
-                    SetItemRef(link, linkText, button)
-                end)
+                row:SetScript("OnHyperlinkClick", LinkClick)
             end
             row.text:SetText(text)
         end)

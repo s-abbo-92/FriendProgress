@@ -47,7 +47,7 @@ function filters.prof(d, share) return share.prof and d or nil end
 
 -- Receivers drop anything over Comm's 200 chunks of 220 bytes, which would lose the
 -- recipes too. Materials are the bulk of it, so a very large list goes without them.
-local MAX_RECIPES_SIZE = 40000
+local MAX_RECIPES_SIZE = 24000   -- about 110 chunks, ~22s to send at the queue rate
 
 function filters.recipes(d, share)
     if not share.recipes then return nil end
