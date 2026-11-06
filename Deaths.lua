@@ -225,6 +225,15 @@ local lastAttacker   -- { name, level, guid, at }
 local lastCast = {}  -- [ unit GUID ] = { name, at }
 local lastFall, lastEnv = 0, nil   -- lastEnv = { ability, at }
 
+-- WoW Forever can hand combat values (UNIT_COMBAT damage, sometimes unit info) over as
+-- "secret" values, which error when concatenated, compared, used in maths or as table
+-- keys (and tonumber passes them through). Treat them as unknown so a death is still
+-- reported, just without that detail.
+local function Plain(v)
+    if issecretvalue and issecretvalue(v) then return nil end
+    return v
+end
+
 local ATTACKER_UNITS = { "target", "mouseover", "focus", "pettarget" }
 for i = 1, 40 do ATTACKER_UNITS[#ATTACKER_UNITS + 1] = "nameplate" .. i end
 
@@ -232,14 +241,16 @@ local function FindAttacker()
     for _, unit in ipairs(ATTACKER_UNITS) do
         if UnitExists(unit) and UnitCanAttack("player", unit) and not UnitIsDead(unit)
             and UnitIsUnit(unit .. "target", "player") then
-            return { name = UnitName(unit), level = UnitLevel(unit), guid = UnitGUID(unit), at = GetTime() }
+            return { name = Plain(UnitName(unit)), level = Plain(UnitLevel(unit)), guid = Plain(UnitGUID(unit)),
+                at = GetTime() }
         end
     end
 end
 
 ns:OnUnit("UNIT_COMBAT", function(unit, action, _, amount, school)
+    action = Plain(action)
     if unit ~= "player" or action ~= "WOUND" then return end
-    lastWound = { amount = tonumber(amount), school = tonumber(school), at = GetTime() }
+    lastWound = { amount = tonumber(Plain(amount)), school = tonumber(Plain(school)), at = GetTime() }
     lastAttacker = FindAttacker() or lastAttacker
 end, "player")
 
@@ -252,7 +263,8 @@ end
 -- Only the units an attacker could be found on, not every party and raid member.
 ns:OnUnit("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
     if unit == "player" or not UnitCanAttack("player", unit) then return end
-    local guid, name = UnitGUID(unit), spellID and SpellName(spellID)
+    spellID = Plain(spellID)
+    local guid, name = Plain(UnitGUID(unit)), spellID and Plain(SpellName(spellID))
     if guid and name then
         lastCast[guid] = { name = name, at = GetTime() }
         castsSeen = castsSeen + 1
