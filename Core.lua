@@ -27,6 +27,7 @@ local DEFAULTS = {
             log = true,
             liveXP = true,  -- broadcast XP to the current party for the party XP box
             deaths = true,  -- announce our deaths
+            bnet = true,    -- also sync with Battle.net friends playing this game, on any realm
         },
         deaths = {
             alerts = true,  -- raid-warning style alert when a friend dies

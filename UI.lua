@@ -571,6 +571,10 @@ local function BuildSettings()
         function() return share().liveXP end,
         function(v) share().liveXP = v end, nil,
         function(v) ns.SetLiveXPSharing(v) end)
+    Check("Battle.net friends (any realm)",
+        function() return share().bnet end,
+        function(v) share().bnet = v end, nil,
+        function(v) if v then ns.SayHello(true, true) end end)
     Label("Materials = trade goods and reagents. Feed entries for anything you don't share are left out.",
         "GameFontDisableSmall", nil, 280)
 
