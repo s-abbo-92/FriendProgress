@@ -103,14 +103,17 @@ local function SetBars(r, value, max, rested)
 end
 
 local function Fill(r, unit)
-    local name, realm = UnitName(unit)
+    local first, realm = UnitName(unit)
+    local key = first and ns.FullName(first, realm ~= "" and realm or nil)
+    -- On WoW Forever that's the full two-part name; elsewhere drop the realm.
+    local name = key and Ambiguate(key, "short") or first
     local _, class = UnitClass(unit)
     local d
     if UnitIsUnit(unit, "player") then
         d = { level = UnitLevel("player"), xp = UnitXP("player"), xpMax = UnitXPMax("player"),
               rested = GetXPExhaustion() or 0 }
     else
-        d = ns.liveXP[ns.FullName(name, realm ~= "" and realm or nil)]
+        d = key and ns.liveXP[key]
     end
 
     r.name:SetText(ns.ClassColored(name or "?", class))

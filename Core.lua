@@ -93,8 +93,30 @@ function ns:Fire(msg, ...)
     for _, fn in ipairs(callbacks[msg] or {}) do fn(...) end
 end
 
+-- WoW Forever has no realms and two-part names ("Slim Steaky"), which are unique on
+-- their own. Its UnitName returns them as two values, "Slim", "Steaky", where other
+-- clients return a realm (never, for the player), so that tells us which game this is.
+local function TwoPartNames()
+    local _, second = UnitName("player")
+    return second ~= nil and second ~= ""
+end
+
+-- The key a character is stored and addressed under. Elsewhere that's "Name-Realm".
+-- On WoW Forever it's the bare two-part name: addon messages arrive labelled
+-- "Slim Steaky" (party) or with a realm attached, and adding a realm ourselves names
+-- someone who doesn't exist ("No player named 'Slim Steaky-<our realm>'").
+-- name/realm may also be UnitName's two values; on WoW Forever the second is the surname.
 function ns.FullName(name, realm)
     if not name then return nil end
+    if TwoPartNames() then
+        local bare = name:match("^(.-)%-[^%-]*$") or name
+        if bare:find(" ", 1, true) then return bare end
+        if realm and realm ~= "" and not name:find("-", 1, true) then return name .. " " .. realm end
+        -- "Slim-Steaky": how versions before 0.3.8 stored a two-part name.
+        local first, last = name:match("^([^%s%-]+)%-([^%s%-]+)$")
+        if first then return first .. " " .. last end
+        return name
+    end
     if name:find("-", 1, true) then return name end
     realm = realm or GetNormalizedRealmName()
     return realm and (name .. "-" .. realm) or name
@@ -140,79 +162,44 @@ function ns.RefreshOnScreen()
     if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
 end
 
--- Our key in the same form other players' addon messages arrive with ("Name-Realm").
--- WoW Forever has two-part names and no realms: UnitName gives "Smitty", "Jensen" (so
--- FullName made "Smitty-Jensen"), while the server labels our messages
--- "Smitty Jensen-CAMWOWEU5Realm5PvE". Battle.net's info for our own character has
--- exactly that name and realm, so use it when it's there.
--- Returns nil while Battle.net hasn't loaded our own game account yet.
-local function BattleNetName()
-    local guid = UnitGUID("player")
-    if guid and C_BattleNet and C_BattleNet.GetGameAccountInfoByGUID then
-        local info = C_BattleNet.GetGameAccountInfoByGUID(guid)
-        local name, realm = info and info.characterName, info and info.realmName
-        if name and name ~= "" and realm and realm ~= "" then
-            return name .. "-" .. (realm:gsub("%s", ""))
-        end
-    end
-end
-
--- 0.3.6 and earlier keyed a two-part name "Slim Steaky-<realm>" as "Slim-Steaky"
--- (FullName of UnitName's "Slim", "Steaky"). Returns that old key, or nil for
--- one-word names, which were keyed the same way then as now.
-function ns.LegacyName(key)
-    local name = key:match("^(.*)%-[^%-]*$") or key
-    local first, rest = name:match("^(%S+)%s+(.+)$")
-    return first and (first .. "-" .. rest) or nil
-end
-
--- A player we hear from under their full name may still have a record under the old
--- key from an earlier version: drop it, or they'd show up twice ("Slim" and "Slim Steaky").
-function ns.ForgetLegacyName(key)
-    local old = ns.LegacyName(key)
-    local c = old and old ~= key and ns.db.chars[old]
-    if c and not c.isMine then
-        ns.db.chars[old] = nil
-        ns:Fire("DATA_UPDATED")
-    end
-end
-
--- Switch ns.me to name, carrying our record over. A record already under the new key
--- that isn't ours is the ghost older versions made from our own echoed guild/party
--- messages, so it's replaced.
-local function Adopt(name)
+-- Saved data from versions before 0.3.8 has WoW Forever characters under older keys:
+-- "Slim-Steaky" (0.3.5 and earlier) or "Slim Steaky-<realm>" (0.3.6, 0.3.7, or a party
+-- member with our own realm wrongly added). Move everything to the current key. When two
+-- records land on one key, ours wins (a ghost of ourselves loses), then the newest.
+local function MigrateKeys()
     local chars = ns.db.chars
-    local old = ns.me or ns.FullName(UnitName("player"))
-    if old ~= name and chars[old] and chars[old].isMine
-        and not (chars[name] and chars[name].isMine) then
-        chars[name], chars[old] = chars[old], nil
+    local moves = {}
+    for key in pairs(chars) do
+        local new = ns.FullName(key)
+        if new ~= key then moves[#moves + 1] = { key, new } end
     end
-    ns.me = name
-    ns.GetChar(name).isMine = true
+    for _, m in ipairs(moves) do
+        local old, new = chars[m[1]], m[2]
+        local cur = chars[new]
+        local keepOld = not cur
+            or (old.isMine and not cur.isMine)
+            or (old.isMine == cur.isMine and (old.lastSeen or 0) > (cur.lastSeen or 0))
+        if keepOld then
+            old.isMine = old.isMine or (cur and cur.isMine) or nil
+            chars[new] = old
+        end
+        chars[m[1]] = nil
+    end
+    for _, g in ipairs(ns.db.groups or {}) do
+        local members = {}
+        for key in pairs(g.members) do members[ns.FullName(key)] = true end
+        g.members = members
+    end
+    for _, d in ipairs(ns.db.deaths) do
+        if d.name then d.name = ns.FullName(d.name) end
+    end
 end
 
 ns:On("PLAYER_LOGIN", function()
-    local name = BattleNetName()
-    Adopt(name or ns.FullName(UnitName("player")))
+    MigrateKeys()
+    ns.me = ns.FullName(UnitName("player"))
+    ns.GetChar(ns.me).isMine = true
     ns:Fire("LOGIN")
-    if name then return end
-    -- Battle.net can take a few seconds after login; until then we're under the old
-    -- form of our name. Switch as soon as the real one is available.
-    local tries = 0
-    local function Retry()
-        tries = tries + 1
-        local later = BattleNetName()
-        if later then
-            if later ~= ns.me then
-                Adopt(later)
-                ns:Fire("DATA_UPDATED")
-                if ns.SayHello then ns.SayHello(true, true) end
-            end
-        elseif tries < 30 then
-            C_Timer.After(2, Retry)
-        end
-    end
-    C_Timer.After(2, Retry)
 end)
 
 SLASH_FRIENDPROGRESS1 = "/fp"
@@ -282,7 +269,7 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         ns.SetDeathRelay(not ns.db.settings.deaths.relay)
         if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
     elseif cmd == "remove" and rest ~= "" then
-        local key = ns.FullName(rest)
+        local key = ns.FullName(rest)   -- "Slim Steaky", or Name-Realm elsewhere
         if ns.db.chars[key] then
             ns.db.chars[key] = nil
             ns:Fire("DATA_UPDATED")

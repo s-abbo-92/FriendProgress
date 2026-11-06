@@ -108,8 +108,8 @@ end
 --
 -- WoW Forever is realmless and characters have two-part names, so the Battle.net game
 -- account info for a friend (e.g. characterName "Smitty Jensen", realmName
--- "CAMWOWEU5Realm5PvE") may not match the name their addon knows itself by (ns.me, see
--- BattleNetName in Core.lua). Rather than guess, every Battle.net message says who sent it:
+-- "CAMWOWEU5Realm5PvE") isn't needed to know who they are. Every Battle.net message
+-- says who sent it, and the receiver puts that through ns.FullName like any sender:
 -- "N|<sender's ns.me>|<message>". Older versions ignore these (there's no "N" handler),
 -- which is fine: their Battle.net sync didn't work.
 local BNET_OK = BNSendGameData and BNGetNumFriends and C_BattleNet and C_BattleNet.GetFriendGameAccountInfo
@@ -442,7 +442,7 @@ local function RefreshGuildMembers()
     if not IsInGuild() then return end
     for i = 1, GetNumGuildMembers() do
         local name = GetGuildRosterInfo(i)
-        if name then guildMembers[Ambiguate(name, "none")] = true end
+        if name then guildMembers[ns.FullName(name)] = true end
     end
 end
 ns:On("GUILD_ROSTER_UPDATE", function() guildStale = true end)
@@ -455,23 +455,18 @@ local SHARED_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT
 local function IsTrusted(sender, channel)
     if SHARED_CHANNELS[channel] then return true end
     if channel ~= "WHISPER" then return false end
+    -- sender has been through ns.FullName; compare everything in that same form.
     local short = Ambiguate(sender, "none")
     if UnitInParty(short) or UnitInRaid(short) then return true end
     if guildStale then RefreshGuildMembers() end
-    if guildMembers[short] then return true end
+    if guildMembers[sender] then return true end
     for _, name in ipairs(OnlineFriends()) do
-        if Ambiguate(name, "none") == short then return true end
+        if ns.FullName(name) == sender then return true end
     end
     return false
 end
 
-local legacyChecked = {}   -- senders whose old-style duplicate we've already looked for
-
 local function Dispatch(sender, text)
-    if not legacyChecked[sender] then
-        legacyChecked[sender] = true
-        ns.ForgetLegacyName(sender)
-    end
     local kind, rest = text:match("^(%a)|(.*)$")
     local fn = kind and handlers[kind]
     if fn then fn(sender, rest) end
@@ -510,7 +505,10 @@ if BNET_OK then
     ns:On("BN_CHAT_MSG_ADDON", function(prefix, text, _, gameAccountID)
         if prefix ~= PREFIX or not ns.me or not gameAccountID or not BNetEnabled() then return end
         local sender, inner = text:match("^N|([^|]+)|(.*)$")
-        if not ValidCharacter(sender) or sender == ns.me then return end
+        if not ValidCharacter(sender) then return end
+        -- 0.3.5-0.3.7 name themselves "Slim-Steaky" or "Slim Steaky-<realm>".
+        sender = ns.FullName(sender)
+        if sender == ns.me then return end
         bnRoute[sender] = gameAccountID
         Dispatch(sender, inner)
     end)
