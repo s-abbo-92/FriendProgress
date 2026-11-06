@@ -36,7 +36,7 @@ local function Pump()
         local msg = queue[1]
         if msg[2] == "BNET" then
             -- pcall: the friend may have logged off since this was queued.
-            pcall(BNSendGameData, msg[3], PREFIX, msg[1])
+            pcall(BNSendGameData, msg[3], PREFIX, "N|" .. ns.me .. "|" .. msg[1])
         else
             local result = C_ChatInfo.SendAddonMessage(PREFIX, msg[1], msg[2], msg[3])
             if THROTTLED and result == THROTTLED then return end   -- retry next tick
@@ -94,45 +94,76 @@ local function OnlineFriends()
 end
 
 -- Battle.net friends online in this same game (WoW Forever), on any realm.
--- bnRoute maps their current character to the game account to send to; it's
--- rebuilt each time the list is read, so it never points at a logged-off session.
-local BNET_OK = BNSendGameData and BNGetNumFriends and C_BattleNet
-    and C_BattleNet.GetFriendGameAccountInfo and C_BattleNet.GetGameAccountInfoByID
-local bnRoute = {}   -- [ "Name-Realm" ] = gameAccountID
+--
+-- WoW Forever is realmless and characters have two-part names, so the Battle.net game
+-- account info (e.g. characterName "Smitty Jensen", realmName "CAMWOWEU5Realm5PvE")
+-- doesn't match the name the addon knows a player by (ns.me, built from UnitName and
+-- GetNormalizedRealmName). Rather than guess, every Battle.net message says who sent it:
+-- "N|<sender's ns.me>|<message>". Older versions ignore these (there's no "N" handler),
+-- which is fine: their Battle.net sync didn't work.
+local BNET_OK = BNSendGameData and BNGetNumFriends and C_BattleNet and C_BattleNet.GetFriendGameAccountInfo
+local bnRoute = {}   -- [ "Name-Realm" ] = gameAccountID they last messaged us from
 
--- "Name-Realm" in the same form CHAT_MSG_ADDON senders use (realm without spaces or dashes).
-local function BNetCharacter(info)
-    if not info or not info.isOnline or info.clientProgram ~= (BNET_CLIENT_WOW or "WoW") then return nil end
-    if info.wowProjectID and info.wowProjectID ~= WOW_PROJECT_ID then return nil end
-    local name, realm = info.characterName, info.realmName
-    if not name or name == "" or not realm or realm == "" then return nil end
-    return name .. "-" .. (realm:gsub("[%s%-]", ""))
+-- A character key as another client's ns.me: names can have spaces on WoW Forever,
+-- so only rule out what our message format and saved data can't hold.
+local function ValidCharacter(name)
+    return name ~= nil and #name <= 80 and name:match("^[^|%c%s][^|%c]*[^|%c%s]$") ~= nil
 end
 
+local function BNetEnabled()
+    return BNET_OK and ns.db and ns.db.settings.share.bnet
+end
+
+-- Game accounts of Battle.net friends online in this game, not counting ourselves.
 local function BNetFriends()
-    local list = {}   -- { { name = "Name-Realm", id = gameAccountID }, ... }
-    wipe(bnRoute)
-    if not BNET_OK or not (ns.db and ns.db.settings.share.bnet) then return list end
+    local list = {}   -- { gameAccountID, ... }
+    if not BNetEnabled() then return list end
+    local me = UnitGUID("player")
     for i = 1, BNGetNumFriends() do
         for j = 1, C_BattleNet.GetFriendNumGameAccounts(i) do
             local info = C_BattleNet.GetFriendGameAccountInfo(i, j)
-            local name = BNetCharacter(info)
-            if name and name ~= ns.me and info.gameAccountID then
-                list[#list + 1] = { name = name, id = info.gameAccountID }
-                bnRoute[name] = info.gameAccountID
+            if info and info.isOnline and info.gameAccountID
+                and info.clientProgram == (BNET_CLIENT_WOW or "WoW")
+                and (not info.wowProjectID or info.wowProjectID == WOW_PROJECT_ID)
+                and not (info.playerGuid and info.playerGuid == me) then
+                list[#list + 1] = info.gameAccountID
             end
         end
     end
     return list
 end
 
--- Whisper one player, over Battle.net if that's how we reach them (works cross-realm).
+-- Whisper one player, over Battle.net if that's how they reached us (works cross-realm).
+-- A player we only know over Battle.net is never whispered: the whisper would fail
+-- with "No player named ... is currently playing" if they're on another realm.
 local function SendTo(name, text, priority)
     if bnRoute[name] then
         Send(text, "BNET", bnRoute[name], priority)
     else
         Send(text, "WHISPER", name, priority)
     end
+end
+
+-- For /fp bnet: what Battle.net reports, to check the above against.
+function ns.BNetDebug()
+    if not BNET_OK then ns.Print("Battle.net game data isn't available in this client.") return end
+    ns.Print(("Battle.net sync is %s. This game: project %s, you: %s %s"):format(
+        BNetEnabled() and "on" or "off (Sharing...)", tostring(WOW_PROJECT_ID), tostring(ns.me),
+        tostring(UnitGUID("player"))))
+    local shown = 0
+    for i = 1, BNGetNumFriends() do
+        for j = 1, C_BattleNet.GetFriendNumGameAccounts(i) do
+            local info = C_BattleNet.GetFriendGameAccountInfo(i, j)
+            if info and info.isOnline and info.clientProgram == (BNET_CLIENT_WOW or "WoW") then
+                shown = shown + 1
+                ns.Print(("  #%s: %s / %s / %s, project %s, %s"):format(tostring(info.gameAccountID),
+                    tostring(info.characterName), tostring(info.realmName), tostring(info.realmDisplayName),
+                    tostring(info.wowProjectID), tostring(info.playerGuid)))
+            end
+        end
+    end
+    if shown == 0 then ns.Print("  No Battle.net friends online in WoW.") end
+    for name, id in pairs(bnRoute) do ns.Print(("  heard from %s via #%s"):format(name, tostring(id))) end
 end
 
 ---------------------------------------------------------------------------
@@ -174,14 +205,9 @@ function ns.Broadcast(text, priority)
     if IsInGuild() then Send(text, "GUILD", nil, priority) end
     local group = SyncGroupChannel()
     if group then Send(text, group, nil, priority) end
-    local whispered = {}
-    for _, name in ipairs(OnlineFriends()) do
-        Send(text, "WHISPER", name, priority)
-        whispered[ns.FullName(name)] = true
-    end
-    for _, f in ipairs(BNetFriends()) do
-        if not whispered[f.name] then Send(text, "BNET", f.id, priority) end
-    end
+    for _, name in ipairs(OnlineFriends()) do Send(text, "WHISPER", name, priority) end
+    -- Battle.net friends who are also character friends get it twice; receivers dedupe.
+    for _, id in ipairs(BNetFriends()) do Send(text, "BNET", id, priority) end
 end
 
 -- Manual sync (window button, on-screen button, /fp sync). Returns false while cooling down.
@@ -425,9 +451,6 @@ local function IsTrusted(sender, channel)
     for _, name in ipairs(OnlineFriends()) do
         if Ambiguate(name, "none") == short then return true end
     end
-    for _, f in ipairs(BNetFriends()) do
-        if f.name == sender then return true end
-    end
     return false
 end
 
@@ -444,15 +467,16 @@ ns:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     Dispatch(sender, text)
 end)
 
--- Only Battle.net friends can send us game data, so these are trusted. Remember the
--- route so our replies to this character go back over Battle.net too.
+-- Only Battle.net friends can send us game data, so these are trusted. The sender
+-- names themselves ("N|Name-Realm|..."); remember the game account so our replies to
+-- that character go back over Battle.net too.
 if BNET_OK then
     ns:On("BN_CHAT_MSG_ADDON", function(prefix, text, _, gameAccountID)
-        if prefix ~= PREFIX or not ns.me or not gameAccountID or not ns.db.settings.share.bnet then return end
-        local sender = BNetCharacter(C_BattleNet.GetGameAccountInfoByID(gameAccountID))
-        if not sender or sender == ns.me then return end
+        if prefix ~= PREFIX or not ns.me or not gameAccountID or not BNetEnabled() then return end
+        local sender, inner = text:match("^N|([^|]+)|(.*)$")
+        if not ValidCharacter(sender) or sender == ns.me then return end
         bnRoute[sender] = gameAccountID
-        Dispatch(sender, text)
+        Dispatch(sender, inner)
     end)
 end
 
@@ -487,10 +511,10 @@ local onlineBNet
 if BNET_OK then
     ns:On("BN_FRIEND_INFO_CHANGED", function()
         local now = {}
-        for _, f in ipairs(BNetFriends()) do
-            now[f.name] = true
-            if onlineBNet and not onlineBNet[f.name] and ns.me then
-                Send(HelloText(true), "BNET", f.id)
+        for _, id in ipairs(BNetFriends()) do
+            now[id] = true
+            if onlineBNet and not onlineBNet[id] and ns.me then
+                Send(HelloText(true), "BNET", id)
             end
         end
         onlineBNet = now

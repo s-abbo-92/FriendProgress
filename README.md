@@ -58,6 +58,7 @@ Everyone you sync with should be on the same version; older versions ignore some
 | `/fp deaths jokes` | Jokes in death alerts on or off |
 | `/fp deaths test` | Preview a death alert (and test the Discord relay) |
 | `/fp deaths debug` | Show what death detection has seen (last hit, attacker, falls) |
+| `/fp bnet` | Show which Battle.net friends sync can see and who it has heard from |
 | `/fp discord` | Post your deaths to Discord on or off (needs the relay, see below) |
 | `/fp remove Name-Realm` | Forget a character |
 

@@ -208,6 +208,8 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         else
             ns.ShowTab("deaths")
         end
+    elseif cmd == "bnet" then
+        ns.BNetDebug()
     elseif cmd == "discord" then
         ns.SetDeathRelay(not ns.db.settings.deaths.relay)
         if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
@@ -232,6 +234,7 @@ SlashCmdList.FRIENDPROGRESS = function(input)
         Print("/fp notify - toggle chat notifications for friend activity")
         Print("/fp deaths - death log; /fp deaths alerts, /fp deaths jokes - toggle alerts or jokes; /fp deaths test - preview")
         Print("/fp deaths debug - what death detection has seen (last hit, attacker, falls)")
+        Print("/fp bnet - what Battle.net sync can see (friends online in this game)")
         Print("/fp discord - post your deaths to Discord (needs the relay installed)")
         Print("/fp remove Name-Realm - forget a character")
     end
