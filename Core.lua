@@ -145,7 +145,8 @@ end
 -- FullName made "Smitty-Jensen"), while the server labels our messages
 -- "Smitty Jensen-CAMWOWEU5Realm5PvE". Battle.net's info for our own character has
 -- exactly that name and realm, so use it when it's there.
-local function MyName()
+-- Returns nil while Battle.net hasn't loaded our own game account yet.
+local function BattleNetName()
     local guid = UnitGUID("player")
     if guid and C_BattleNet and C_BattleNet.GetGameAccountInfoByGUID then
         local info = C_BattleNet.GetGameAccountInfoByGUID(guid)
@@ -154,23 +155,64 @@ local function MyName()
             return name .. "-" .. (realm:gsub("%s", ""))
         end
     end
-    return ns.FullName(UnitName("player"))
+end
+
+-- 0.3.6 and earlier keyed a two-part name "Slim Steaky-<realm>" as "Slim-Steaky"
+-- (FullName of UnitName's "Slim", "Steaky"). Returns that old key, or nil for
+-- one-word names, which were keyed the same way then as now.
+function ns.LegacyName(key)
+    local name = key:match("^(.*)%-[^%-]*$") or key
+    local first, rest = name:match("^(%S+)%s+(.+)$")
+    return first and (first .. "-" .. rest) or nil
+end
+
+-- A player we hear from under their full name may still have a record under the old
+-- key from an earlier version: drop it, or they'd show up twice ("Slim" and "Slim Steaky").
+function ns.ForgetLegacyName(key)
+    local old = ns.LegacyName(key)
+    local c = old and old ~= key and ns.db.chars[old]
+    if c and not c.isMine then
+        ns.db.chars[old] = nil
+        ns:Fire("DATA_UPDATED")
+    end
+end
+
+-- Switch ns.me to name, carrying our record over. A record already under the new key
+-- that isn't ours is the ghost older versions made from our own echoed guild/party
+-- messages, so it's replaced.
+local function Adopt(name)
+    local chars = ns.db.chars
+    local old = ns.me or ns.FullName(UnitName("player"))
+    if old ~= name and chars[old] and chars[old].isMine
+        and not (chars[name] and chars[name].isMine) then
+        chars[name], chars[old] = chars[old], nil
+    end
+    ns.me = name
+    ns.GetChar(name).isMine = true
 end
 
 ns:On("PLAYER_LOGIN", function()
-    ns.me = MyName()
-    -- 0.3.5 and earlier keyed us as FullName(UnitName("player")); move that record over.
-    -- A record already under the new key that isn't ours is the ghost those versions made
-    -- from our own echoed guild/party messages, so it's dropped.
-    local old = ns.FullName(UnitName("player"))
-    local chars = ns.db.chars
-    if old ~= ns.me and chars[old] and chars[old].isMine
-        and not (chars[ns.me] and chars[ns.me].isMine) then
-        chars[ns.me], chars[old] = chars[old], nil
-    end
-    local c = ns.GetChar(ns.me)
-    c.isMine = true
+    local name = BattleNetName()
+    Adopt(name or ns.FullName(UnitName("player")))
     ns:Fire("LOGIN")
+    if name then return end
+    -- Battle.net can take a few seconds after login; until then we're under the old
+    -- form of our name. Switch as soon as the real one is available.
+    local tries = 0
+    local function Retry()
+        tries = tries + 1
+        local later = BattleNetName()
+        if later then
+            if later ~= ns.me then
+                Adopt(later)
+                ns:Fire("DATA_UPDATED")
+                if ns.SayHello then ns.SayHello(true, true) end
+            end
+        elseif tries < 30 then
+            C_Timer.After(2, Retry)
+        end
+    end
+    C_Timer.After(2, Retry)
 end)
 
 SLASH_FRIENDPROGRESS1 = "/fp"

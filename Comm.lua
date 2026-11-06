@@ -109,7 +109,7 @@ end
 -- WoW Forever is realmless and characters have two-part names, so the Battle.net game
 -- account info for a friend (e.g. characterName "Smitty Jensen", realmName
 -- "CAMWOWEU5Realm5PvE") may not match the name their addon knows itself by (ns.me, see
--- MyName in Core.lua). Rather than guess, every Battle.net message says who sent it:
+-- BattleNetName in Core.lua). Rather than guess, every Battle.net message says who sent it:
 -- "N|<sender's ns.me>|<message>". Older versions ignore these (there's no "N" handler),
 -- which is fine: their Battle.net sync didn't work.
 local BNET_OK = BNSendGameData and BNGetNumFriends and C_BattleNet and C_BattleNet.GetFriendGameAccountInfo
@@ -465,7 +465,13 @@ local function IsTrusted(sender, channel)
     return false
 end
 
+local legacyChecked = {}   -- senders whose old-style duplicate we've already looked for
+
 local function Dispatch(sender, text)
+    if not legacyChecked[sender] then
+        legacyChecked[sender] = true
+        ns.ForgetLegacyName(sender)
+    end
     local kind, rest = text:match("^(%a)|(.*)$")
     local fn = kind and handlers[kind]
     if fn then fn(sender, rest) end
