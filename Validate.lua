@@ -7,7 +7,7 @@ local _, ns = ...
 
 local type, pairs, ipairs = type, pairs, ipairs
 
-local LIMITS = { items = 600, gear = 19, profs = 12, recipes = 1500, quests = 50, objectives = 10, log = 30 }
+local LIMITS = { items = 600, gear = 19, profs = 12, recipes = 1500, reagents = 12, quests = 50, objectives = 10, log = 30 }
 
 local function Num(v, default)
     if type(v) == "number" and v == v and v > -1e15 and v < 1e15 then return v end
@@ -54,6 +54,7 @@ function clean.char(d)
         name = Str(d.name, 48), race = Str(d.race, 30), guild = Str(d.guild, 80), zone = Str(d.zone, 80),
         class = class and class:match("^%u+$") or nil,
         level = Num(d.level, 0), xp = Num(d.xp, 0), xpMax = Num(d.xpMax), rested = Num(d.rested, 0),
+        xph = Num(d.xph),
         ilvl = Num(d.ilvl),
     }
 end
@@ -85,13 +86,30 @@ function clean.prof(d)
     return out
 end
 
+-- { [recipeID] = { [itemID] = count } }
+local function Mats(t)
+    local out, n = {}, 0
+    if type(t) ~= "table" then return out end
+    for recipeID, reagents in pairs(t) do
+        if type(recipeID) == "number" and type(reagents) == "table" then
+            n = n + 1
+            if n > LIMITS.recipes then break end
+            out[recipeID] = NumMap(reagents, LIMITS.reagents)
+        end
+    end
+    return out
+end
+
 function clean.recipes(d)
     local out, profs = {}, 0
     for name, entry in pairs(d) do
         if type(name) == "string" and type(entry) == "table" then
             profs = profs + 1
             if profs > LIMITS.profs then break end
-            out[Str(name, 40)] = { id = Num(entry.id), t = Num(entry.t, 0), list = NumMap(entry.list, LIMITS.recipes) }
+            out[Str(name, 40)] = {
+                id = Num(entry.id), t = Num(entry.t, 0),
+                list = NumMap(entry.list, LIMITS.recipes), mats = Mats(entry.mats),
+            }
         end
     end
     return out

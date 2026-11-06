@@ -23,12 +23,64 @@ end
 ns.AddLog = AddLog
 
 ---------------------------------------------------------------------------
+-- XP per hour, averaged over the last hour of this play session. XP arrives in big
+-- lumps from quest turn-ins, so a shorter window would swing wildly. Kept on the
+-- character but outside sections, so the per-minute gains are never sent; friends
+-- get the rate through the char section instead (their shared XP is too coarse to use).
+--   c.xpTrack = { start = session start, gains = { [minute] = xp earned } }
+---------------------------------------------------------------------------
+local RATE_WINDOW = 3600
+local RATE_MIN_TIME = 300   -- less than this is too little to estimate from
+local lastXP, lastXPMax
+
+local function XPTrack()
+    local c = Me()
+    c.xpTrack = c.xpTrack or { start = GetServerTime(), gains = {} }
+    return c.xpTrack
+end
+
+local function RecordXP()
+    if not ns.me then return end
+    local xp = UnitXP("player")
+    if lastXP then
+        -- XP only drops on a level up: count what finished the old level plus the new.
+        local gain = xp >= lastXP and xp - lastXP or lastXPMax - lastXP + xp
+        if gain > 0 then
+            local gains, minute = XPTrack().gains, math.floor(GetServerTime() / 60)
+            gains[minute] = (gains[minute] or 0) + gain
+        end
+    end
+    lastXP, lastXPMax = xp, UnitXPMax("player")
+end
+
+-- XP per hour, or nil until there's enough to go on.
+function ns.XPRate()
+    local c = ns.me and ns.db.chars[ns.me]
+    local track = c and c.xpTrack
+    if not track then return nil end
+    local now = GetServerTime()
+    local from = math.max(track.start, now - RATE_WINDOW)
+    if now - from < RATE_MIN_TIME then return nil end
+    local total = 0
+    for minute, gain in pairs(track.gains) do
+        if minute * 60 + 59 >= from then
+            total = total + gain
+        else
+            track.gains[minute] = nil
+        end
+    end
+    if total <= 0 then return nil end
+    return total / (now - from) * 3600
+end
+
+---------------------------------------------------------------------------
 -- Section scanners. Each returns a plain table that gets serialized and sent.
 ---------------------------------------------------------------------------
 local scanners = {}
 
 function scanners.char()
     local _, classFile = UnitClass("player")
+    local rate = ns.XPRate()
     local d = {
         -- Not UnitName: on WoW Forever that's only the first name ("Smitty" of "Smitty Jensen").
         name = ns.me and Ambiguate(ns.me, "short") or UnitName("player"),
@@ -38,6 +90,7 @@ function scanners.char()
         xp = UnitXP("player"),
         xpMax = UnitXPMax("player"),
         rested = GetXPExhaustion() or 0,
+        xph = rate and math.floor(rate),
         zone = GetZoneText(),
         guild = (GetGuildInfo("player")),
     }
@@ -145,7 +198,8 @@ end
 ---------------------------------------------------------------------------
 -- Recipes. Like the bank, they can only be read while the player's own
 -- profession window is open, so each open records that profession's list:
---   sections.recipes = { [profName] = { id = skillLine, t = time, list = { [recipeID] = outputItemID or 0 } } }
+--   sections.recipes = { [profName] = { id = skillLine, t = time, list = { [recipeID] = outputItemID or 0 },
+--                                       mats = { [recipeID] = { [itemID] = count needed } } } }
 ---------------------------------------------------------------------------
 local outputCache = {}
 local function OutputItem(recipeID)
@@ -160,6 +214,25 @@ local function OutputItem(recipeID)
     end
     outputCache[recipeID] = id
     return id
+end
+
+-- The materials every craft needs; optional and finishing reagents don't count.
+local BASIC_REAGENT = Enum.CraftingReagentType and Enum.CraftingReagentType.Basic or 1
+local matsCache = {}
+local function RecipeMats(recipeID)
+    if matsCache[recipeID] ~= nil then return matsCache[recipeID] or nil end
+    local mats
+    local ok, schematic = pcall(C_TradeSkillUI.GetRecipeSchematic, recipeID, false)
+    for _, slot in ipairs(ok and schematic and schematic.reagentSlotSchematics or {}) do
+        local reagent = slot.reagents and slot.reagents[1]
+        if reagent and reagent.itemID and (slot.quantityRequired or 0) > 0
+            and (slot.reagentType == nil or slot.reagentType == BASIC_REAGENT) then
+            mats = mats or {}
+            mats[reagent.itemID] = slot.quantityRequired
+        end
+    end
+    matsCache[recipeID] = mats or false
+    return mats
 end
 
 -- False when the window shows someone else's (linked/guild) or an NPC's recipes.
@@ -186,13 +259,14 @@ local function CaptureRecipes()
     local base = C_TradeSkillUI.GetBaseProfessionInfo()
     local profName = base and base.professionName
     if not profName or profName == "" then return end
-    local list, count, budget, incomplete = {}, 0, RESOLVE_PER_PASS, false
+    local list, mats, count, budget, incomplete = {}, {}, 0, RESOLVE_PER_PASS, false
     for _, recipeID in ipairs(C_TradeSkillUI.GetAllRecipeIDs() or {}) do
         local info = C_TradeSkillUI.GetRecipeInfo(recipeID)
         if info and info.learned then
             if outputCache[recipeID] or budget > 0 then
                 if not outputCache[recipeID] then budget = budget - 1 end
                 list[recipeID] = OutputItem(recipeID)
+                mats[recipeID] = RecipeMats(recipeID)
                 count = count + 1
             else
                 incomplete = true
@@ -208,8 +282,9 @@ local function CaptureRecipes()
     local c = Me()
     local all = c.sections.recipes or {}
     local old = all[profName]
-    if old and SameList(old.list or {}, list) then return end   -- unchanged: don't resync
-    all[profName] = { id = base.professionID, t = GetServerTime(), list = list }
+    if old and SameList(old.list or {}, list)
+        and ns.Serialize(old.mats or {}) == ns.Serialize(mats) then return end   -- unchanged: don't resync
+    all[profName] = { id = base.professionID, t = GetServerTime(), list = list, mats = mats }
     c.sections.recipes = all
     ns.MarkDirty("recipes")
 end
@@ -319,7 +394,17 @@ ns:Listen("LOGIN", function()
     C_Timer.After(10, ns.CollectAll)
 end)
 
-ns:On("PLAYER_XP_UPDATE", Dirty("char"))
+ns:On("PLAYER_XP_UPDATE", function()
+    RecordXP()
+    ns.MarkDirty("char")
+end)
+ns:Listen("LOGIN", RecordXP)
+-- A new session starts the average again. A /reload carries on with the saved one.
+ns:On("PLAYER_ENTERING_WORLD", function(isLogin)
+    if not ns.me then return end
+    if isLogin then Me().xpTrack = nil end
+    XPTrack()
+end)
 ns:On("ZONE_CHANGED_NEW_AREA", Dirty("char"))
 ns:On("PLAYER_GUILD_UPDATE", Dirty("char"))
 ns:On("PLAYER_EQUIPMENT_CHANGED", function(slot)

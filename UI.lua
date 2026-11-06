@@ -123,6 +123,29 @@ end
 ---------------------------------------------------------------------------
 local render = {}
 
+local function Duration(seconds)
+    local minutes = floor(seconds / 60)
+    if minutes < 60 then return minutes .. "m" end
+    return ("%dh %dm"):format(floor(minutes / 60), minutes % 60)
+end
+
+-- Friends send their rate. Hide it once they've gone quiet: it only updates as they earn XP.
+local RATE_STALE = 1800
+local function XPRateLines(lines, c, s, key)
+    local rate = s.xph
+    if key == ns.me then
+        rate = ns.XPRate()
+    elseif GetServerTime() - (c.lastSeen or 0) > RATE_STALE then
+        rate = nil
+    end
+    if not rate or rate <= 0 then return end
+    lines[#lines + 1] = ("XP per hour: about %d"):format(floor(rate))
+    local seconds = math.max(s.xpMax - (s.xp or 0), 0) / rate * 3600
+    if seconds < 100 * 3600 then
+        lines[#lines + 1] = "Next level: about " .. Duration(seconds) .. Gray("  at this rate")
+    end
+end
+
 function render.overview(c, key)
     local s = c.sections.char
     if not s then return { "Waiting for data from " .. key .. "..." } end
@@ -135,6 +158,7 @@ function render.overview(c, key)
         local pct = floor(s.xp / s.xpMax * 100)
         local rested = (s.rested or 0) > 0 and (" (+" .. s.rested .. " rested)") or ""
         lines[#lines + 1] = ("XP: %d / %d  (%d%%)%s"):format(s.xp, s.xpMax, pct, rested)
+        XPRateLines(lines, c, s, key)
     end
     if s.zone and s.zone ~= "" then lines[#lines + 1] = "Zone: " .. s.zone end
     if s.guild then lines[#lines + 1] = "Guild: <" .. s.guild .. ">" end
@@ -207,6 +231,28 @@ local function CountKeys(t)
     return n
 end
 
+-- How many of an item they hold across bags and bank, or nil if they don't share their bags.
+local function MaterialCount(c, id)
+    local bags, bank = c.sections.bags, c.sections.bank
+    if not bags or bags.filter == "none" then return nil end
+    return ((bags.items or {})[id] or 0) + (bank and bank.items and bank.items[id] or 0)
+end
+
+local function MaterialLines(lines, c, mats)
+    local list = {}
+    for id, need in pairs(mats or {}) do list[#list + 1] = { id = id, need = need } end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    for _, m in ipairs(list) do
+        local have = MaterialCount(c, m.id)
+        local text = Gray(("need %d"):format(m.need))
+        if have then
+            local colour = have >= m.need and "33d999" or "ff6666"
+            text = ("|cff%shave %d|r  %s"):format(colour, have, text)
+        end
+        lines[#lines + 1] = "        " .. ItemText(m.id) .. "  " .. text
+    end
+end
+
 function render.prof(c, key)
     local profs = c.sections.prof
     if not profs then return { "No profession data yet." } end
@@ -240,6 +286,7 @@ function render.prof(c, key)
         table.sort(list, function(a, b) return a.name < b.name end)
         for _, e in ipairs(list) do
             lines[#lines + 1] = "    " .. RecipeText(e.id, e.item)
+            MaterialLines(lines, c, r.mats and r.mats[e.id])
         end
     end
     return lines

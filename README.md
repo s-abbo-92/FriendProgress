@@ -41,6 +41,10 @@ Everyone you sync with should be on the same version; older versions ignore some
 - `/fp` opens the window. Right-click a character to add them to a friend group.
 - **Sharing...** chooses what you send to others (bags: everything, crafting materials only, or nothing; same for the bank).
 - The party XP box shows live XP for you and your party. Unlock it in **Sharing...** to move it.
+- The Professions tab lists each recipe's materials and how many that player has across bags and bank.
+  Materials are recorded when they open that profession window, and counts need their bags shared.
+- The Overview tab estimates XP per hour and time to next level from the last hour of play, once
+  you've played for 5 minutes. Quest XP arrives in big lumps, so treat it as a rough guide.
 
 | Command | What it does |
 |---|---|

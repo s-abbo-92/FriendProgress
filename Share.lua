@@ -25,25 +25,40 @@ local function Step(value, max)
     return math.floor(value / step) * step
 end
 
+-- Rounded to two significant digits (123,456 -> 120,000). Gold and the XP rate use this,
+-- for the same reason: every coin or kill would otherwise count as a change worth syncing.
+local function TwoDigits(value)
+    if not value or value < 100 then return value end
+    local step = 10 ^ (math.floor(math.log10(value)) - 1)
+    return math.floor(value / step) * step
+end
+
 function filters.char(d, share)
     local copy = CopyTable(d)
     copy.xp = Step(d.xp, d.xpMax)
     copy.rested = Step(d.rested, d.xpMax)
+    copy.xph = TwoDigits(d.xph)
     if not share.zone then copy.zone = nil end
     return copy
 end
 
--- Gold is shared to two significant digits (123g 45s -> 120g), for the same reason:
--- every coin looted would otherwise count as a change worth syncing.
-local function RoundMoney(copper)
-    if not copper or copper < 100 then return copper end
-    local step = 10 ^ (math.floor(math.log10(copper)) - 1)
-    return math.floor(copper / step) * step
-end
-
 function filters.gear(d, share) return share.gear and d or nil end
 function filters.prof(d, share) return share.prof and d or nil end
-function filters.recipes(d, share) return share.recipes and d or nil end
+
+-- Receivers drop anything over Comm's 200 chunks of 220 bytes, which would lose the
+-- recipes too. Materials are the bulk of it, so a very large list goes without them.
+local MAX_RECIPES_SIZE = 40000
+
+function filters.recipes(d, share)
+    if not share.recipes then return nil end
+    if #ns.Serialize(d) <= MAX_RECIPES_SIZE then return d end
+    local out = {}
+    for name, entry in pairs(d) do
+        out[name] = { id = entry.id, t = entry.t, list = entry.list }
+    end
+    return out
+end
+
 function filters.quest(d, share) return share.quest and d or nil end
 
 -- Copies a bags/bank snapshot with only the contents that mode allows.
@@ -63,7 +78,7 @@ end
 function filters.bags(d, share)
     if share.bags == "none" and not share.gold then return nil end
     local out = FilterContainer(d, share.bags)
-    out.money = share.gold and RoundMoney(d.money) or nil
+    out.money = share.gold and TwoDigits(d.money) or nil
     return out
 end
 
