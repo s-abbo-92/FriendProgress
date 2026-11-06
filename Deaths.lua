@@ -234,13 +234,20 @@ local function Plain(v)
     return v
 end
 
+-- For yes/no answers (UnitExists, UnitCanAttack, ...): a secret answer can't be tested,
+-- so it counts as "no" and the attacker simply stays unknown.
+local function Yes(v)
+    if issecretvalue and issecretvalue(v) then return false end
+    return v and true or false
+end
+
 local ATTACKER_UNITS = { "target", "mouseover", "focus", "pettarget" }
 for i = 1, 40 do ATTACKER_UNITS[#ATTACKER_UNITS + 1] = "nameplate" .. i end
 
 local function FindAttacker()
     for _, unit in ipairs(ATTACKER_UNITS) do
-        if UnitExists(unit) and UnitCanAttack("player", unit) and not UnitIsDead(unit)
-            and UnitIsUnit(unit .. "target", "player") then
+        if Yes(UnitExists(unit)) and Yes(UnitCanAttack("player", unit)) and not Yes(UnitIsDead(unit))
+            and Yes(UnitIsUnit(unit .. "target", "player")) then
             return { name = Plain(UnitName(unit)), level = Plain(UnitLevel(unit)), guid = Plain(UnitGUID(unit)),
                 at = GetTime() }
         end
@@ -262,7 +269,7 @@ end
 -- Fires once per unit token showing the caster (target, nameplate3, ...); same result each time.
 -- Only the units an attacker could be found on, not every party and raid member.
 ns:OnUnit("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
-    if unit == "player" or not UnitCanAttack("player", unit) then return end
+    if unit == "player" or not Yes(UnitCanAttack("player", unit)) then return end
     spellID = Plain(spellID)
     local guid, name = Plain(UnitGUID(unit)), spellID and Plain(SpellName(spellID))
     if guid and name then
@@ -276,7 +283,7 @@ ns:On("PLAYER_REGEN_ENABLED", function() lastCast = {} end)
 
 -- Cheap enough at 5x a second: one IsFalling call and up to three mirror timer lookups.
 C_Timer.NewTicker(0.2, function()
-    if IsFalling() then lastFall = GetTime() end
+    if Yes(IsFalling()) then lastFall = GetTime() end
     for i = 1, MIRRORTIMER_NUMTIMERS or 3 do
         local timer = GetMirrorTimerInfo(i)
         if (timer == "BREATH" or timer == "EXHAUSTION") and GetMirrorTimerProgress(timer) <= 0 then

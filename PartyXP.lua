@@ -12,11 +12,17 @@ local rows = {}
 
 local function Settings() return ns.db.settings.partyXP end
 
+-- Inside instances some yes/no answers can come back secret and can't be tested; treat as "no".
+local function Yes(v)
+    if issecretvalue and issecretvalue(v) then return false end
+    return v and true or false
+end
+
 -- In a raid, party1-4 are the members of your own subgroup.
 local function Units()
     local units = { "player" }
     for i = 1, 4 do
-        if UnitExists("party" .. i) then units[#units + 1] = "party" .. i end
+        if Yes(UnitExists("party" .. i)) then units[#units + 1] = "party" .. i end
     end
     return units
 end
@@ -109,7 +115,7 @@ local function Fill(r, unit)
     local name = key and Ambiguate(key, "short") or first
     local _, class = UnitClass(unit)
     local d
-    if UnitIsUnit(unit, "player") then
+    if unit == "player" or Yes(UnitIsUnit(unit, "player")) then
         d = { level = UnitLevel("player"), xp = UnitXP("player"), xpMax = UnitXPMax("player"),
               rested = GetXPExhaustion() or 0 }
     else
