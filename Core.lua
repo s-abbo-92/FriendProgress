@@ -1,7 +1,7 @@
 -- FriendProgress: core namespace, event dispatch, saved data and slash commands.
 local ADDON, ns = ...
 
-ns.VERSION = "0.3.1"
+ns.VERSION = "0.3.2"
 ns.PROTOCOL = 1
 
 -- Each section is collected, hashed and synced independently, so a change to
