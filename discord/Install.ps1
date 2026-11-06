@@ -101,7 +101,10 @@ $lnk.WindowStyle = 7   # minimized; -WindowStyle Hidden then hides it
 $lnk.Description = "Posts your FriendProgress deaths to Discord"
 $lnk.Save()
 
-Start-Process powershell.exe -ArgumentList $relayArgs -WindowStyle Hidden
+# Start it in its own folder, as the shortcut does: otherwise it inherits this script's
+# working directory (the addon's discord folder) and Windows won't let WowUp replace
+# the addon folder on update while the relay is running.
+Start-Process powershell.exe -ArgumentList $relayArgs -WindowStyle Hidden -WorkingDirectory $dest
 
 Write-Host "Installed. The relay is running now and will start with Windows." -ForegroundColor Green
 Write-Host ""
