@@ -30,6 +30,12 @@ local THROTTLED = Enum.SendAddonMessageResult and Enum.SendAddonMessageResult.Ad
 
 local PRIORITY_BURST = 5   -- priority messages (deaths, live XP) sent per tick instead of one
 
+-- What we sent to guild/group recently, to spot our own messages echoing back (see
+-- CHAT_MSG_ADDON). Live XP is left out: "X|off" from someone else would look the same.
+local ECHO_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT = true }
+local ECHO_WINDOW = 30
+local sentShared = {}   -- [ text ] = GetTime() when sent
+
 local function Pump()
     local sent = 0
     while queue[1] do
@@ -40,6 +46,7 @@ local function Pump()
         else
             local result = C_ChatInfo.SendAddonMessage(PREFIX, msg[1], msg[2], msg[3])
             if THROTTLED and result == THROTTLED then return end   -- retry next tick
+            if ECHO_CHANNELS[msg[2]] and not msg[1]:find("^X|") then sentShared[msg[1]] = GetTime() end
         end
         table.remove(queue, 1)
         sent = sent + 1
@@ -47,6 +54,10 @@ local function Pump()
     end
     ticker:Cancel()
     ticker = nil
+    local now = GetTime()
+    for text, t in pairs(sentShared) do
+        if now - t > ECHO_WINDOW then sentShared[text] = nil end
+    end
 end
 
 -- priority messages jump ahead of bulk section data (but stay in order among themselves).
@@ -96,9 +107,9 @@ end
 -- Battle.net friends online in this same game (WoW Forever), on any realm.
 --
 -- WoW Forever is realmless and characters have two-part names, so the Battle.net game
--- account info (e.g. characterName "Smitty Jensen", realmName "CAMWOWEU5Realm5PvE")
--- doesn't match the name the addon knows a player by (ns.me, built from UnitName and
--- GetNormalizedRealmName). Rather than guess, every Battle.net message says who sent it:
+-- account info for a friend (e.g. characterName "Smitty Jensen", realmName
+-- "CAMWOWEU5Realm5PvE") may not match the name their addon knows itself by (ns.me, see
+-- MyName in Core.lua). Rather than guess, every Battle.net message says who sent it:
 -- "N|<sender's ns.me>|<message>". Older versions ignore these (there's no "N" handler),
 -- which is fine: their Battle.net sync didn't work.
 local BNET_OK = BNSendGameData and BNGetNumFriends and C_BattleNet and C_BattleNet.GetFriendGameAccountInfo
@@ -460,10 +471,29 @@ local function Dispatch(sender, text)
     if fn then fn(sender, rest) end
 end
 
+-- Guild and group messages come back to the sender too. Normally that's under ns.me, but
+-- if the server names us differently (it did on WoW Forever before ns.me was built from
+-- Battle.net), recognise our own message by its text, remember that name as ours and
+-- drop the ghost character older versions created for it.
+local selfNames = {}
+
+local function IsOwnEcho(sender, text, channel)
+    if selfNames[sender] then return true end
+    local t = ECHO_CHANNELS[channel] and sentShared[text]
+    if not t or GetTime() - t > ECHO_WINDOW then return false end
+    selfNames[sender] = true
+    local ghost = ns.db.chars[sender]
+    if ghost and not ghost.isMine then
+        ns.db.chars[sender] = nil
+        ns:Fire("DATA_UPDATED")   -- no name: listeners mustn't look the removed character up
+    end
+    return true
+end
+
 ns:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or not ns.me then return end
     sender = ns.FullName(sender)
-    if sender == ns.me or not IsTrusted(sender, channel) then return end
+    if sender == ns.me or IsOwnEcho(sender, text, channel) or not IsTrusted(sender, channel) then return end
     Dispatch(sender, text)
 end)
 

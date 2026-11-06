@@ -140,8 +140,34 @@ function ns.RefreshOnScreen()
     if ns.RefreshSettingsPanel then ns.RefreshSettingsPanel() end
 end
 
+-- Our key in the same form other players' addon messages arrive with ("Name-Realm").
+-- WoW Forever has two-part names and no realms: UnitName gives "Smitty", "Jensen" (so
+-- FullName made "Smitty-Jensen"), while the server labels our messages
+-- "Smitty Jensen-CAMWOWEU5Realm5PvE". Battle.net's info for our own character has
+-- exactly that name and realm, so use it when it's there.
+local function MyName()
+    local guid = UnitGUID("player")
+    if guid and C_BattleNet and C_BattleNet.GetGameAccountInfoByGUID then
+        local info = C_BattleNet.GetGameAccountInfoByGUID(guid)
+        local name, realm = info and info.characterName, info and info.realmName
+        if name and name ~= "" and realm and realm ~= "" then
+            return name .. "-" .. (realm:gsub("%s", ""))
+        end
+    end
+    return ns.FullName(UnitName("player"))
+end
+
 ns:On("PLAYER_LOGIN", function()
-    ns.me = ns.FullName(UnitName("player"))
+    ns.me = MyName()
+    -- 0.3.5 and earlier keyed us as FullName(UnitName("player")); move that record over.
+    -- A record already under the new key that isn't ours is the ghost those versions made
+    -- from our own echoed guild/party messages, so it's dropped.
+    local old = ns.FullName(UnitName("player"))
+    local chars = ns.db.chars
+    if old ~= ns.me and chars[old] and chars[old].isMine
+        and not (chars[ns.me] and chars[ns.me].isMine) then
+        chars[ns.me], chars[old] = chars[old], nil
+    end
     local c = ns.GetChar(ns.me)
     c.isMine = true
     ns:Fire("LOGIN")

@@ -30,7 +30,8 @@ local scanners = {}
 function scanners.char()
     local _, classFile = UnitClass("player")
     local d = {
-        name = UnitName("player"),
+        -- Not UnitName: on WoW Forever that's only the first name ("Smitty" of "Smitty Jensen").
+        name = ns.me and Ambiguate(ns.me, "short") or UnitName("player"),
         class = classFile,
         race = (UnitRace("player")),
         level = UnitLevel("player"),
