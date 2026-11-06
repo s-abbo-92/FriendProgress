@@ -51,7 +51,7 @@ if ($folders.Count -eq 1) {
     $wow = $folders[[int]$pick - 1]
 } else {
     Write-Host "Couldn't find your WoW folder."
-    do { $wow = (Read-Host "Paste the folder that contains Interface\AddOns (e.g. C:\Program Files (x86)\World of Warcraft\_classic_era_)").Trim('"', ' ') }
+    do { $wow = (Read-Host "Paste the folder that contains Interface\AddOns (e.g. C:\Program Files (x86)\World of Warcraft\_forever_)").Trim('"', ' ') }
     until (Test-Path (Join-Path $wow "Interface"))
 }
 Write-Host "WoW folder: $wow"

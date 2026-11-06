@@ -10,7 +10,7 @@ addon messages through your guild, your group and your in-game friends list.
 
 ### With WowUp
 
-1. In WowUp, select your `_classic_beta_` install.
+1. In WowUp, select your **World of Warcraft Forever** install (the `_forever_` folder). If it isn't listed, add it under **Options > WoW installations**.
 2. Go to **Get Addons**, choose **Install from URL** and paste `https://github.com/s-abbo-92/FriendProgress`.
 
 WowUp then offers updates whenever a new release is published. Carry on from step 3 below.
@@ -19,8 +19,8 @@ WowUp then offers updates whenever a new release is published. Carry on from ste
 
 1. Download `FriendProgress-<version>-forever.zip` from the repository's Releases page, or get
    `FriendProgress-<version>.zip` from whoever shares it with you.
-2. Close WoW, then extract the zip into `World of Warcraft\_classic_beta_\Interface\AddOns\`
-   (usually `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\`).
+2. Close WoW, then extract the zip into `World of Warcraft\_forever_\Interface\AddOns\`
+   (usually `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`).
    You should end up with `AddOns\FriendProgress\FriendProgress.toc` and not an extra folder level.
    To update, delete the old `FriendProgress` folder first.
 3. Start the game. If FriendProgress shows as out of date on the character select screen,
